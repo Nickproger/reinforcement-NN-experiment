@@ -17,41 +17,84 @@ td {
 
 
 <script>
+//throw '!!!!!!!!!!';
+console.clear();
+
 const map = [];
-let agentPos;
+const stepsHistory = [];
+let agentPos, rewardPos;
 let result = 0;
+let trainedModel;
+let model;
+let worldCycle = 0;
+let _worldCycleInterval;
+
 
 init();
-
-setInterval(function() {
-  let res = doStep();
-  if (res.reward !== 0) {
-    // console.log(res);
-    let newPos = _findEmptyPos(); map[newPos.x][newPos.y] = res.reward;    
-    result += res.reward;
-  }
-  drawMap();
-}, 10);
-
 
 function init() {
   let newPos;
   console.clear();
   for (let x=0; x<10; x++) {   map[x]=[];  for (let y=0; y<10; y++) { map[x][y] = 0; } }
-  newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-  newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-  newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-  newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-  newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-  newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+  // newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+  // newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+  //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+  //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+  //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+  rewardPos = _findEmptyPos(); map[rewardPos.x][rewardPos.y] = 1;
   agentPos = _findEmptyPos(); map[agentPos.x][agentPos.y] = 0.5;
   drawMap();
-  console.log(map);  
+  console.log(map); 
+  _worldCycleInterval = setInterval(doWorldCycle, 10);
 }  
+
+function doWorldCycle() {
+  worldCycle++;
+  if (stepsHistory.length > 10000) clearInterval(_worldCycleInterval);
+  
+  let res = doStep();
+  stepsHistory.push([
+    [res.agentPos.x/10, res.agentPos.y/10,
+      rewardPos.x/10, rewardPos.y/10,  res.action/3],
+    [res.reward]
+  ]);
+  
+  
+  if (res.reward !== 0) {
+    console.log(stepsHistory[stepsHistory.length-1]);
+    // console.log(res);
+    rewardPos = _findEmptyPos();
+    map[rewardPos.x][rewardPos.y] = res.reward;    
+    result += res.reward;
+  }
+  drawMap();
+  
+  if (stepsHistory.length === 10000) {
+     // console.log('training started ...')
+     //train(historyIn, historyOut).then(trModel => {
+     //  trainedModel = trModel;
+     //  console.log('trained !!!', trModel);
+     //});
+  }
+}
+
+function train(stepsHistory, epochs) {
+   model = tf.sequential({layers:[ 
+     tf.layers.dense({units: 128, inputShape: 5, activation: 'sigmoid'}),       
+     tf.layers.dense({units: 1, activation: 'sigmoid'})
+   ]});
+   model.compile({ optimizer: tf.train.adam(0.1), loss: 'meanSquaredError' });
+   return model.fit(
+     tf.tensor2d(stepsHistory.map(el => el[0])),
+     tf.tensor2d(stepsHistory.map(el => el[1])),
+     {epochs: epochs || 100, shuffle: true}
+   ).then(() => model);
+}
 
 function doStep() {
     let action = getAction();
     let reward = 0;
+    let prevAgentPos = {x: agentPos.x, y: agentPos.y};
     //console.log(action);
     switch(action) {
       case 0: // left 
@@ -93,7 +136,7 @@ function doStep() {
         break;
     }
   
-    return {state: map, action, reward};
+    return {action, reward, agentPos: prevAgentPos};
   
 }
 
@@ -127,6 +170,22 @@ function _findEmptyPos(){
     y = Math.floor(Math.random() * 10);         
   } while (map[x][y] !== 0);
   return {x, y};
+}
+
+function _getUniqueHistory(stepsHistory) {
+   stepsHistory = _addHistoryItemIDs(stepsHistory);
+   const fHistory = [];
+   for(let i=0; i < stepsHistory.length; i++ ) {
+        if (!fHistory.some(el => el[2]===stepsHistory[i][2] )) {
+ 	    	    fHistory.push(stepsHistory[i]);
+        }
+   }
+  return fHistory;
+}
+
+function _addHistoryItemIDs(stepsHistory) {
+  stepsHistory.forEach(el => el.push(el[0].join(',') + '=' + el[1][0] ));
+  return stepsHistory;
 }
 
 </script>
