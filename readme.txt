@@ -1,8 +1,6 @@
+World (Agent, Field(States), Actions, Rewards ...):
 https://codepen.io/anon/pen/XYOERp?editors=0100
-
-
-
-https://codepen.io/anon/pen/jKJavE?editors=0010
+https://codepen.io/anon/pen/VdNVmp?editors=0010
 
 
 XOR:
