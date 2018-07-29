@@ -1,191 +1,500 @@
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.12.0">
+
+
+</script>
 <table id="map"></table>
 <div id="result"></div>
+
+<button onclick="runWorld()">Run world</button>
+<button onclick="pauseWorld(true)">Pause world</button>
+<br /><br />
+<button onclick="runTrain()">Run train</button>
+<button onclick="pauseTrain()">Pause train</button>
+<br /><br />
+<button onclick="drawMap(true)">Phediction MAP</button><br />
+<button onclick="_predictPositive()">Test Prediction of positive actions</button><br />
+<button onclick="_predictZero()">Test Prediction of zero actions</button>
+<br /><br />
+<button onclick="saveModel()">Save model</button>
+<button onclick="loadModel()">Load model</button>
+<br />
+<input id="json-upload" type="file" />
+<br />
+<input id="weights-upload" type="file" />
+<br />
+<button onclick="loadModelFromFile()">Load model from file</button>
+<br /><br />
+<input value="model__lastest" id="saveToFile">
+<button onclick="saveToFile()">Save to file</button>
+
 
 
 
 <style>
-table {
-  border: 1px solid black;
+body {
+    background: black;
+    color: grey;
 }
+
+table {
+    border: 1px solid grey;
+}
+
 td {
-  width: 30px;
-  height: 30px;
+    width: 20px;
+    height: 20px;
+    background: #000;
+    text-align: center;
+    border: 1px solid #222;
+    font-weight: bold;
+}
+
+button {
+    min-width: 120px;
 }
 </style>
 
 
 
 
+
+
 <script>
 //throw '!!!!!!!!!!';
-console.clear();
 
-const map = [];
-const stepsHistory = [];
-let agentPos, rewardPos;
-let result = 0;
-let trainedModel;
-let model;
-let worldCycle = 0;
-let _worldCycleInterval;
-
+let map = [],
+    //lambda = 0.5,
+    //gamma = 0.8,
+    stepsHistory = [],
+    agentPos, result = 0,
+    model = defineNN(),
+    _worldCycleInterval, _trainingInProgress,
+    d,a, isMapStateTheSame, stepRes, countedReward;
 
 init();
 
+
 function init() {
-  let newPos;
-  console.clear();
-  for (let x=0; x<10; x++) {   map[x]=[];  for (let y=0; y<10; y++) { map[x][y] = 0; } }
-  // newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-  // newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-  //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-  //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-  //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-  rewardPos = _findEmptyPos(); map[rewardPos.x][rewardPos.y] = 1;
-  agentPos = _findEmptyPos(); map[agentPos.x][agentPos.y] = 0.5;
-  drawMap();
-  console.log(map); 
-  _worldCycleInterval = setInterval(doWorldCycle, 10);
-}  
+    let newPos;
+    console.clear();
+    for (let x = 0; x < 10; x++) {
+        map[x] = [];
+        for (let y = 0; y < 10; y++) {
+            map[x][y] = 0;
+        }
+    }
+    //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    //newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    agentPos = _findEmptyPos(); map[agentPos.x][agentPos.y] = 0.5;
+    drawMap();
+    //console.log(map);
+    loadModel().then(()=>{
+	    stepsHistory = JSON.parse(localStorage.getItem('stepsHistory')); 
+  	  runWorld();
+    });
+}
 
 function doWorldCycle() {
-  worldCycle++;
-  if (stepsHistory.length > 10000) clearInterval(_worldCycleInterval);
-  
-  let res = doStep();
-  stepsHistory.push([
-    [res.agentPos.x/10, res.agentPos.y/10,
-      rewardPos.x/10, rewardPos.y/10,  res.action/3],
-    [res.reward]
-  ]);
-  
-  
-  if (res.reward !== 0) {
-    console.log(stepsHistory[stepsHistory.length-1]);
-    // console.log(res);
-    rewardPos = _findEmptyPos();
-    map[rewardPos.x][rewardPos.y] = res.reward;    
-    result += res.reward;
-  }
-  drawMap();
-  
-  if (stepsHistory.length === 10000) {
-     // console.log('training started ...')
-     //train(historyIn, historyOut).then(trModel => {
-     //  trainedModel = trModel;
-     //  console.log('trained !!!', trModel);
-     //});
-  }
+
+    stepsHistory.push([_mapToNNInput(map)]);
+    stepRes = doStep();
+    // If after making action state of map is the same - then reward = 0!
+    // It's not mandatory, just to speed up learing by preventing hidding of the wall
+    isMapStateTheSame = _mapToNNInput(map).join(',') === stepsHistory[stepsHistory.length-1][0].join(',');
+    a = stepRes.action;
+    stepsHistory[stepsHistory.length-1][0].push(a === 0 ? 1 : 0, a === 1 ? 1 : 0, a === 2 ? 1 : 0, a === 3 ? 1 : 0);
+
+
+    countedReward = isMapStateTheSame ?
+        0 :
+        //0.75*(stepRes.reward + 0.25 * Math.max.apply(null, _predictAtPoint().concat([0])));
+        //0.9 * (stepRes.reward + 0.6 * Math.max.apply(null, _predictAtPoint().concat([0])));
+        0.95*stepRes.reward + 0.5 * Math.max.apply(null, _predictAtPoint().concat([0]));
+    
+    stepsHistory[stepsHistory.length-1].push([countedReward]);
+
+    //if (countedReward > 0.5) {
+    //	console.log('Reward: ' + countedReward.toFixed(3));
+    //}
+   // if (countedReward !== 0) {
+        //	countedReward > 0.3 && console.log('Reward: ' + countedReward.toFixed(3), stepsHistory[stepsHistory.length-1]);
+
+        // update Rewards to several previous steps which leeded to this Reward
+        // let hLen = stepsHistory.length;
+        // if (hLen > 1) {stepsHistory[hLen - 2][1][0] += lambda * countedReward;}
+        // if (hLen > 2) {stepsHistory[hLen - 3][1][0] += lambda * lambda * countedReward;}
+    // }
+
+
+    //let hLen = stepsHistory.length;
+    //stepsHistory[hLen-1].push([isMapStateTheSame ? 0 : stepRes.reward]);
+    //if (hLen > 1) {
+    ////	stepsHistory[hLen-2][1][0] = 0.75 * (stepsHistory[hLen-2][1][0] +  0.25 * stepsHistory[hLen-2][1][0]);
+    //	stepsHistory[hLen-2][1][0] = 0.9 * (stepsHistory[hLen-2][1][0] +  0.6 * stepsHistory[hLen-2][1][0]);
+    //}
+
+
+    // if agent take the reward ("green apple")
+    if (stepRes.reward === 1) {
+        let pos = _findEmptyPos();
+        map[pos.x][pos.y] = 1;
+        result++;
+    }
+    drawMap();
+
+    if (stepsHistory.length > 10000) {
+        pauseWorld();
+        drawMap(true);
+        setTimeout(runTrain, 1);
+    }
+}
+
+function runWorld() {
+    if (!_worldCycleInterval) {
+        _worldCycleInterval = setInterval(doWorldCycle, 1);
+    }
+}
+
+function pauseWorld(isManual) {
+    clearInterval(_worldCycleInterval);
+    _worldCycleInterval = undefined;
+}
+
+function defineNN() {
+    const model = tf.sequential({
+        layers: [
+            tf.layers.dense({units: 204, activation: 'relu', inputShape: 204}),
+            tf.layers.dense({units: 204, activation: 'relu'}),
+            tf.layers.dense({units: 204, activation: 'relu'}),
+            tf.layers.dense({units: 204, activation: 'relu'}),
+            tf.layers.dense({units: 204, activation: 'relu'}),
+            tf.layers.dense({units: 204, activation: 'relu'}),
+            tf.layers.dense({units: 1,   activation: 'tanh'})
+        ]
+    });
+    _compileModel(model);
+    return model;
+}
+
+function _compileModel(model) {
+    model.compile({
+        optimizer: tf.train.sgd(0.1),
+        loss: 'meanSquaredError'
+    });
 }
 
 function train(stepsHistory, epochs) {
-   model = tf.sequential({layers:[ 
-     tf.layers.dense({units: 128, inputShape: 5, activation: 'sigmoid'}),       
-     tf.layers.dense({units: 1, activation: 'sigmoid'})
-   ]});
-   model.compile({ optimizer: tf.train.adam(0.1), loss: 'meanSquaredError' });
-   return model.fit(
-     tf.tensor2d(stepsHistory.map(el => el[0])),
-     tf.tensor2d(stepsHistory.map(el => el[1])),
-     {epochs: epochs || 100, shuffle: true}
-   ).then(() => model);
+    //stepsHistory = _getUniqueHistory(stepsHistory);
+    return model.fit(
+        tf.tensor2d(stepsHistory.map(el => el[0])),
+        tf.tensor2d(stepsHistory.map(el => el[1])), {
+            epochs: epochs || 10,
+            shuffle: true
+        }
+    ).then(() => model)
+}
+
+function runTrain(_innerRun) {
+    if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
+        if (!_innerRun) {
+            stepsHistory = _getUniqueHistory(stepsHistory);
+            //stepsHistory = shuffle(stepsHistory);  
+        }
+        d = new Date();
+        console.log('---' + d.getHours() + ':' + d.getMinutes() + ':' + d.getSeconds() + '--- ');
+        console.log('train...  items:', stepsHistory.length);
+        if (_predictPositive() < 90) {
+            train(stepsHistory, 5).then(() => {
+                _trainingInProgress = setTimeout(() => runTrain('_innerRun'), 1000);
+            });
+        } else {
+            stepsHistory = stepsHistory.slice(-9000);
+            pauseTrain();
+            saveModel();
+            stepsHistory.forEach(h => {h.splice(2,1);});
+            let json = JSON.stringify(stepsHistory);
+            console.log('stepsHistory: ', (json.length / (1024 * 1024)).toFixed(3) + ' MB');
+            localStorage.setItem('stepsHistory', json); 
+            setTimeout(function(){location.reload();}, 3000);
+        }
+    }
+}
+
+function pauseTrain(isManual) {
+    console.log('pause training ...');
+    clearTimeout(_trainingInProgress);
+    _trainingInProgress = undefined;
 }
 
 function doStep() {
     let action = getAction();
     let reward = 0;
-    let prevAgentPos = {x: agentPos.x, y: agentPos.y};
+    let prevAgentPos = {
+        x: agentPos.x,
+        y: agentPos.y
+    };
     //console.log(action);
-    switch(action) {
-      case 0: // left 
-        if (agentPos.y > 0) {
-          map[agentPos.x][agentPos.y] = 0;
-          agentPos.y = agentPos.y - 1;
-          reward = map[agentPos.x][agentPos.y];
-          //console.log(1111, reward,agentPos);
-          map[agentPos.x][agentPos.y] = 0.5;
-        }
-        break;
-      case 1: // down
-        if (agentPos.x < 9) {
-          map[agentPos.x][agentPos.y] = 0;
-          agentPos.x = agentPos.x + 1;
-          reward = map[agentPos.x][agentPos.y];
-          //console.log(22222, reward, agentPos);
-          map[agentPos.x][agentPos.y] = 0.5;
-        }
-        break;
-      case 2: // right
-        if (agentPos.y < 9) {
-          map[agentPos.x][agentPos.y] = 0;
-          agentPos.y = agentPos.y + 1;
-          reward = map[agentPos.x][agentPos.y];
-          //console.log(3333, reward,agentPos);
+    switch (action) {
+        case 0: // left 
+            if (agentPos.y > 0) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.y = agentPos.y - 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(1111, reward,agentPos);
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+        case 1: // down
+            if (agentPos.x < 9) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.x = agentPos.x + 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(22222, reward, agentPos);
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+        case 2: // right
+            if (agentPos.y < 9) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.y = agentPos.y + 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(3333, reward,agentPos);
 
-          map[agentPos.x][agentPos.y] = 0.5;
-        }
-        break;
-      case 3: // up
-        if (agentPos.x > 0) {
-          map[agentPos.x][agentPos.y] = 0;
-          agentPos.x = agentPos.x - 1;
-          reward = map[agentPos.x][agentPos.y];
-          //console.log(44444, reward,agentPos);
-          map[agentPos.x][agentPos.y] = 0.5;
-        }
-        break;
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+        case 3: // up
+            if (agentPos.x > 0) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.x = agentPos.x - 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(44444, reward,agentPos);
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
     }
-  
-    return {action, reward, agentPos: prevAgentPos};
-  
+
+    return {
+        action,
+        reward,
+        agentPos: prevAgentPos
+    };
+
 }
 
 function getAction() {
-  return Math.floor(Math.random()*4);
-}
-
-function drawMap() {
-  var html = '';
-  for (let x=0; x<10; x++) {
-    html += '<tr>';
-    for (let y=0; y<10; y++) {
-       switch(map[x][y]) {
-         case 0   : html += '<td> </td>'; break;
-         case -1  : html += '<td style="color:#F00;">X</td>'; break;
-         case 1   : html += '<td style="color:#0C0;">@</td>'; break;
-         case 0.5 : html += '<td>:)</td>'; break;
-       }
+    let usePredictedAction, predAction, max;
+    if (Math.random() > 0.3) {
+        const pred = _predictAtPoint();
+        max = Math.max.apply(null, pred);
+        predAction = pred.indexOf(max);
+        usePredictedAction = max > 0;
+    } else {
+        usePredictedAction = false;
     }
-    html += '</tr>\n';
-  }
-  //console.log(html);
-  document.getElementById('map').innerHTML = html;
-  document.getElementById('result').innerHTML = result;
+    if (usePredictedAction) {
+        console.log('move: ' + ['LEFT', 'DOWN', 'RIGHT', 'UP'][predAction],/* max*/);
+    }
+    return usePredictedAction ? predAction : Math.floor(Math.random() * 4);
 }
 
-function _findEmptyPos(){
-  let x,y;
-  do {
-    x = Math.floor(Math.random() * 10);
-    y = Math.floor(Math.random() * 10);         
-  } while (map[x][y] !== 0);
-  return {x, y};
+function drawMap(showBg, brightness) {
+    var html = '',
+        bgCss, pred, max, actMarker, hint;
+    for (let x = 0; x < 10; x++) {
+        html += '<tr>';
+        for (let y = 0; y < 10; y++) {
+            if (showBg && map[x][y] === 0) {
+                pred = _predictAtPoint(x, y).concat([0]);
+                max = Math.max.apply(null, pred);
+                actMarker = ['<', 'v', '>', '^', ' '][pred.indexOf(max)];
+                bgCss = ' style="color:rgba(255,200,0, ' + (0.9*max / (brightness || 1) + 0.1) + ');" ';
+                hint = ' title="' + max + '" ';
+            } else {
+                bgCss = '';
+                hint = '';
+            }
+
+            switch (map[x][y]) {
+                case 0: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ' ') + '</td>'; break;
+                case -1: html += '<td style="color:#F00;">X</td>'; break;
+                case 1: html += '<td style="color:#0C0;">@</td>'; break;
+                case 0.5: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ':)') + '</td>'; break;
+            }
+
+        }
+        html += '</tr>\n';
+    }
+    //console.log(html);
+    document.getElementById('map').innerHTML = html;
+    document.getElementById('result').innerHTML = result + ' / ' + stepsHistory.length;
+
+		if (showBg) {
+	    enableCellsMarking();
+    }
+
+}
+
+function _findEmptyPos() {
+    let x, y;
+    do {
+        x = Math.floor(Math.random() * 10);
+        y = Math.floor(Math.random() * 10);
+    } while (map[x][y] !== 0);
+    return {x, y};
 }
 
 function _getUniqueHistory(stepsHistory) {
-   stepsHistory = _addHistoryItemIDs(stepsHistory);
-   const fHistory = [];
-   for(let i=0; i < stepsHistory.length; i++ ) {
-        if (!fHistory.some(el => el[2]===stepsHistory[i][2] )) {
- 	    	    fHistory.push(stepsHistory[i]);
+    stepsHistory = _addHistoryItemIDs(stepsHistory);
+    const fHistory = [];
+    for (let i = stepsHistory.length - 1; i >= 0; i--) {
+        if (!fHistory.some(el => el[2] === stepsHistory[i][2])) {
+            fHistory.push(stepsHistory[i]);
         }
-   }
-  return fHistory;
+    }
+    return fHistory;
 }
 
 function _addHistoryItemIDs(stepsHistory) {
-  stepsHistory.forEach(el => el.push(el[0].join(',') + '=' + el[1][0] ));
-  return stepsHistory;
+    stepsHistory.forEach(el => {
+        if (!el[2]) {
+            el[2] = el[0].join(',');
+        }
+    });
+    return stepsHistory;
+}
+
+function _predictPositive() {
+    const positiveHist = stepsHistory.filter((e, i) => i < 1000 && e[1][0] >= 0.3).slice(-300);
+    const tensor = tf.tensor2d(positiveHist.map(e => e[0]));
+    //const percent = 100 * model.predict(tensor).dataSync().reduce((a,b) => a+b) / positiveHist.map(e=>e[1][0]).reduce((a,b) => a+b);
+    const L = positiveHist.length;
+    const Pred = tf.tidy(() => model.predict(tensor).dataSync());
+    tf.nextFrame();
+    const percent = 100 * (L - Math.min(L, Pred.map((pr, i) => Math.abs(pr / positiveHist[i][1][0] - 1)).reduce((a, b) => a + b))) / L;
+    // model.predict(tensor).print();
+    console.info("Positive Prediction:", percent.toFixed(5) + ' % (' + L + ')');
+    return percent;
+}
+
+function _predictZero() {
+    const hist = stepsHistory.filter((e, i) => i < 1000 && e[1][0] < 0.2).map(e => e[0]).slice(-100);
+    const tensor = tf.tensor2d(hist);
+    const percent = tf.tidy(() => 
+	    100 * model.predict(tensor).dataSync().reduce((a, b) => a + b) / hist.length
+     );
+    tf.nextFrame();
+    console.info("Zeros Prediction:", percent.toFixed(5) + ' %');
+    return percent;
+}
+
+function _predictAtPoint(x, y) {
+    if (x !== undefined && y !== undefined) {
+        map[agentPos.x][agentPos.y] = 0;
+        agentPos.x = x;
+        agentPos.y = y;
+        map[agentPos.x][agentPos.y] = 0.5;
+        drawMap();
+    }
+    let _input = _mapToNNInput(map);
+    let res = model.predict(tf.tensor2d([
+        _input.concat([1, 0, 0, 0]), // left
+        _input.concat([0, 1, 0, 0]), // down
+        _input.concat([0, 0, 1, 0]), // right
+        _input.concat([0, 0, 0, 1]) // up
+    ])).dataSync();
+    tf.nextFrame();
+    return Array.from(res);
+}
+
+function saveModel(name) {
+    model.save('indexeddb://model__v2');
+      console.log('saved !');
+}
+
+function loadModel() {
+    return tf.loadModel('indexeddb://model__v2' /*'indexeddb://model_204_4tanh_1tanh'*/ ).then(m => {
+        model = m;
+        _compileModel(model);
+        console.log('loaded !');
+    });
+}
+
+function loadModelFromFile() {
+	const jsonUpload = document.getElementById('json-upload');
+	const weightsUpload = document.getElementById('weights-upload');
+
+	tf.loadModel(tf.io.browserFiles([
+    jsonUpload.files[0], 
+    weightsUpload.files[0]
+  ])).then(m => {
+    model = m;
+    _compileModel(model);
+    console.log('loaded !');
+  });
+}
+
+
+function saveToFile() {
+	model.save('downloads://' + document.querySelector('#saveToFile').value);
+  console.log('saved !');
+}
+
+
+function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+function _normalizeReward(r) { // not in use for new
+    return -(1 / (3 * Math.max(r, 0) + 1)) + 1;
+}
+
+function _mapToNNInput(map) {
+    const stepsHistoryInput = [];
+    map.forEach(mapCol => {
+        mapCol.forEach(e => {
+            // stepsHistoryInput.push(e);
+            switch (e) {
+                case 0:
+                    stepsHistoryInput.push(0, 0);
+                    break;
+                case 1:
+                    stepsHistoryInput.push(1, 0);
+                    break;
+                    //case -1: stepsHistoryInput.push(0,1); break;
+                    //case 0.5: stepsHistoryInput.push(0.7071,0.7071); break;
+                case 0.5:
+                    stepsHistoryInput.push(0, 1);
+                    break;
+            }
+        });
+    });
+    return stepsHistoryInput;
+}
+
+function enableCellsMarking() {
+    document.querySelectorAll('td').forEach(td => {
+        td.addEventListener('click', e => {
+            e.target.style.backgroundColor = '#050';
+        });
+		td.addEventListener('contextmenu', e => {
+			e.preventDefault();
+            e.target.style.backgroundColor = '#800';
+			return false;
+        }, false);
+    });
 }
 
 </script>
