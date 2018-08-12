@@ -30,6 +30,7 @@
 
 
 
+
 <style>
 body {
     background: black;
@@ -69,7 +70,7 @@ let map = [],
     agentPos, result = 0,
     model = defineNN(),
     _worldCycleInterval, _trainingInProgress,
-    d,a, isMapStateTheSame, stepRes, countedReward;
+    d,a, stepRes, countedReward;
 
 init();
 
@@ -106,18 +107,13 @@ function doWorldCycle() {
 
     stepsHistory.push([_mapToNNInput(map)]);
     stepRes = doStep();
-    // If after making action state of map is the same - then reward = 0!
-    // It's not mandatory, just to speed up learing by preventing hidding of the wall
-    isMapStateTheSame = _mapToNNInput(map).join(',') === stepsHistory[stepsHistory.length-1][0].join(',');
     a = stepRes.action;
     stepsHistory[stepsHistory.length-1][0].push(a === 0 ? 1 : 0, a === 1 ? 1 : 0, a === 2 ? 1 : 0, a === 3 ? 1 : 0);
 
-
-    countedReward = isMapStateTheSame ?
-        0 :
+    countedReward = stepRes.reward + 0.95 * Math.max.apply(null, _predictAtPoint().concat([0]));
         //0.75*(stepRes.reward + 0.25 * Math.max.apply(null, _predictAtPoint().concat([0])));
         //0.9 * (stepRes.reward + 0.6 * Math.max.apply(null, _predictAtPoint().concat([0])));
-        0.95*stepRes.reward + 0.5 * Math.max.apply(null, _predictAtPoint().concat([0]));
+        //0.95*stepRes.reward + 0.5 * Math.max.apply(null, _predictAtPoint().concat([0]));
     
     stepsHistory[stepsHistory.length-1].push([countedReward]);
 
@@ -281,6 +277,14 @@ function doStep() {
             }
             break;
     }
+    
+    if (prevAgentPos.x === agentPos.x && prevAgentPos.y === agentPos.y) {
+    		reward = -1;
+    }
+
+		if (reward === 0) {
+    		reward = -0.01;
+    }
 
     return {
         action,
@@ -292,7 +296,7 @@ function doStep() {
 
 function getAction() {
     let usePredictedAction, predAction, max;
-    if (Math.random() > 0.3) {
+    if (Math.random() > 0.7) {
         const pred = _predictAtPoint();
         max = Math.max.apply(null, pred);
         predAction = pred.indexOf(max);
@@ -496,5 +500,4 @@ function enableCellsMarking() {
         }, false);
     });
 }
-
 </script>
