@@ -3,6 +3,7 @@ https://codepen.io/anon/pen/XYOERp?editors=0100
 https://codepen.io/anon/pen/VdNVmp?editors=0010
 http://jsfiddle.net/7fzwdcy5/111/
 http://jsfiddle.net/7fzwdcy5/122
+http://jsfiddle.net/7fzwdcy5/685/ - positive/negative points
 
 
 XOR:
