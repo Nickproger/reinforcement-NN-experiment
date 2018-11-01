@@ -5,7 +5,7 @@ http://jsfiddle.net/7fzwdcy5/111/
 http://jsfiddle.net/7fzwdcy5/122
 http://jsfiddle.net/7fzwdcy5/685/ - positive/negative points
 http://jsfiddle.net/7fzwdcy5/737/ - good results
-
+http://jsfiddle.net/7fzwdcy5/888/ - strategy auto-adjusting
 
 XOR:
 https://codepen.io/anon/pen/ERMrQq?editors=0010
