@@ -1,4 +1,4 @@
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.13.0">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@0.13.3">
 
 
 </script>
@@ -28,6 +28,9 @@
 <button onclick="saveToFile()">Save to file</button>
 <br><br>
 <button onclick="_saveAndReset()">save and reset!</button>
+<br><br>
+<button onclick="stopReloads()">stop Reloads!</button>
+
 
 
 
@@ -63,17 +66,24 @@ button {
 
 
 <script>
-//throw '!!!!!!!!!!';
+let 
 
-let map = [],
-    lambda = 0.6,
-    //gamma = 0.8,
+		// Config
+		lambda = 0.7, // 0.68
+    maxMinutesForTrain = 15,
+    ownStepProbability = 0.5,
+    stepsForTrainSet = 10000,
+    optimizerAccuracy = 0.001,// 0.001,
+    epochs = 1,
+
+    
+    map = [],
     stepsHistory = [],
     agentPos, result = 0,
     model = defineNN(),
     d,a, stepRes, countedReward;
     
-var _trainingInProgress, _worldCycleInterval;
+var _trainingInProgress, _worldCycleInterval, _autoReloader, _stepsFromLastPositiveResult = 0;
 
 init();
 
@@ -87,26 +97,24 @@ function init() {
             map[x][y] = 0;
         }
     }
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    for (let i=0; i<5; i++) {
+	    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    	newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    }
     agentPos = _findEmptyPos(); map[agentPos.x][agentPos.y] = 0.5;
     drawMap();
     //console.log(map);
 //    let json = localStorage.getItem('stepsHistory');
 //    stepsHistory = json ? JSON.parse(json) : []; 
+		ownStepProbability = localStorage.getItem('ownStepProbability')===null
+    	? ownStepProbability
+      : +localStorage.getItem('ownStepProbability');
+
+    
+    // Reset very long training.
+		_autoReloader = setTimeout(_saveAndReset, maxMinutesForTrain*60*1000);
 
     loadModel().then(runWorld);
-    
-    // Reset very long training.6
-    setTimeout(_saveAndReset, 30*60*1000);
 }
 
 function doWorldCycle() {
@@ -120,13 +128,38 @@ function doWorldCycle() {
       a===2?1:0, a===2?1:0, a===2?1:0,
       a===3?1:0, a===3?1:0, a===3?1:0,
     );
+    
+    // if agent take the reward ("green apple")
+    if (stepRes.reward === -1 || stepRes.reward === 1) {
+				let pos = _findEmptyPos();
+        map[pos.x][pos.y] = stepRes.reward;
+        result = result + stepRes.reward;
+    //    drawMap();
+    }
 
-    countedReward = stepRes.reward + 0.75 * Math.max.apply(null, _predictAtPoint());
+		if (stepRes.reward === -1) {
+    		stepRes.reward = -2;
+    } 
+
+		_stepsFromLastPositiveResult++;
+    if (stepRes.reward === 1 || _stepsFromLastPositiveResult === 10) {
+	    _stepsFromLastPositiveResult = 0;
+      ownStepProbability = stepRes.reward === 1
+        ? 1
+        : Math.max(0, +(ownStepProbability - 0.2).toFixed(1));
+      console.log('ownStepProbability >> ', ownStepProbability);
+    }
+    
+
+		countedReward = stepRes.reward + lambda * Math.max.apply(null, _predictAtPoint());
         //0.75*(stepRes.reward + 0.25 * Math.max.apply(null, _predictAtPoint().concat([0])));
         //0.9 * (stepRes.reward + 0.6 * Math.max.apply(null, _predictAtPoint().concat([0])));
         //0.95*stepRes.reward + 0.5 * Math.max.apply(null, _predictAtPoint().concat([0]));
     
     stepsHistory[stepsHistory.length-1].push([countedReward]);
+
+
+
 
 	 // console.log("Reward: " + stepRes.reward.toFixed(2), '  counted: ' + countedReward.toFixed(2), stepsHistory[stepsHistory.length-1]);
 
@@ -144,6 +177,10 @@ function doWorldCycle() {
 //    }
 
 
+
+   drawMap();
+
+
     //let hLen = stepsHistory.length;
     //stepsHistory[hLen-1].push([isMapStateTheSame ? 0 : stepRes.reward]);
     //if (hLen > 1) {
@@ -152,17 +189,9 @@ function doWorldCycle() {
     //}
 
 
-    // if agent take the reward ("green apple")
-    if (stepRes.reward === -1 || stepRes.reward === 1) {
-		let pos = _findEmptyPos();
-        map[pos.x][pos.y] = stepRes.reward;
-        result = result + stepRes.reward;
-    //    drawMap();
-    }
 
-   drawMap();
 
-    if (stepsHistory.length > 10000) {
+    if (stepsHistory.length > stepsForTrainSet) {
         pauseWorld();
         drawMap(true);
         setTimeout(runTrain, 1000);
@@ -171,13 +200,17 @@ function doWorldCycle() {
 
 function runWorld() {
     if (!_worldCycleInterval) {
-        _worldCycleInterval = setInterval(doWorldCycle, 10);
+        _worldCycleInterval = setInterval(doWorldCycle, 0);
     }
 }
 
 function pauseWorld(isManual) {
     clearInterval(_worldCycleInterval);
     _worldCycleInterval = undefined;
+}
+
+function stopReloads() {
+    clearTimeout(_autoReloader);
 }
 
 
@@ -196,7 +229,8 @@ function defineNN() {
             tf.layers.dense({units: 312, activation: 'elu'}),
 						tf.layers.dropout({rate: 0.1}),
             tf.layers.dense({units: 312, activation: 'elu'}),
-
+						tf.layers.dropout({rate: 0.1}),
+            tf.layers.dense({units: 312, activation: 'elu'}),
 
 //            tf.layers.dense({units: 204, activation: 'relu'}),
 //            tf.layers.dense({units: 104, activation: 'relu'}),
@@ -213,7 +247,7 @@ function defineNN() {
 function _compileModel(model) {
     model.compile({
         // optimizer: tf.train.sgd(0.2),
-        optimizer: tf.train.sgd(0.0025),
+        optimizer: tf.train.sgd(optimizerAccuracy),
         loss: 'meanSquaredError'
 
 	//optimizer: tf.train.adam(0.01),
@@ -227,11 +261,10 @@ function _compileModel(model) {
 }
 
 function train(stepsHistory) {
-    //stepsHistory = _getUniqueHistory(stepsHistory);
     return model.fit(
         tf.tensor2d(stepsHistory.map(el => el[0])),
         tf.tensor2d(stepsHistory.map(el => el[1])), {
-            epochs: 1,
+            epochs: epochs,
             shuffle: true,
             //batch_size: 1000
         }
@@ -241,8 +274,9 @@ function train(stepsHistory) {
 function runTrain(_innerRun) {
     if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
         if (!_innerRun) {
-            stepsHistory = _getUniqueHistory(stepsHistory);
+            // stepsHistory = _getUniqueHistory(stepsHistory);
             //stepsHistory = _getJustPosNearTarget(stepsHistory);  
+            stepsHistory = stepsHistory.filter(e => !isNaN(e[1][0]));
             stepsHistory = shuffle(stepsHistory);  
             //let i = 0;
             //stepsHistory = stepsHistory.filter(e => e[1][0]>=0.5 || e[1][0]<=-0.5 || e[1][0]>-0.5 && e[1][0]<0.5 && i<3000 && ++i );
@@ -254,15 +288,16 @@ function runTrain(_innerRun) {
         	'[' + d.getHours() + ':' + d.getMinutes() + ':' + d.getSeconds() + '] ' +
          'items:', stepsHistory.length + ' train...'
         );
-        if (_predictPositive(undefined, true) < 90 || Math.abs(_predictZero()) > 10 || _predictNegative(true) < 90) {
-            train(stepsHistory).then(() => {
+
+        train(stepsHistory).then(() => {
+							if (_predictPositive(undefined, true) < 80 || Math.abs(_predictZero()) > 20 || _predictNegative(true) < 80) {
             		if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
-                	_trainingInProgress = setTimeout(() => runTrain('_innerRun'), 1000);
+                	_trainingInProgress = setTimeout(() => runTrain('_innerRun'), 100);
                 }
-            });
-        } else {
-					_saveAndReset();
-				}
+			        } else {
+								_saveAndReset();
+							}
+				});
     }
 }
 
@@ -293,12 +328,24 @@ function _saveAndReset() {
     pauseTrain();
     saveModel();
     
-    localStorage.setItem('trainLOG', '[' + 
-        new Date().toLocaleDateString() + ' ' +
-				new Date().toTimeString().substr(0, 8) + ']\n' +
-        ' ' + result + ' / ' + stepsHistory.length + '\t\t' + 
-				_predictPositive().toFixed(1) + '%\t' + 
-				_predictZero().toFixed(1) + '%\t' +
+		let _lastRes = localStorage.getItem('_lastRes') || 0;
+    let _direction = localStorage.getItem('_direction') || 'up';
+		localStorage.setItem('_lastRes', result);
+    if (result>=_lastRes && _direction === 'up' || result<_lastRes && _direction === 'down' ) {
+	    localStorage.setItem('ownStepProbability', Math.min((ownStepProbability+0.1).toFixed(2),1));
+      localStorage.setItem('_direction', 'up');
+    } else {
+	    localStorage.setItem('ownStepProbability', Math.max((ownStepProbability-0.1).toFixed(2),0));
+      localStorage.setItem('_direction', 'down');
+    }
+    
+    localStorage.setItem('trainLOG', '' + 
+        new Date().getDate() + '-' +
+				new Date().toTimeString().substr(0, 8) + ' ' +
+        Math.round(ownStepProbability*100) + '%   \t' +
+        result + '/' + stepsHistory.length + '   \t' + 
+				_predictPositive().toFixed(1) + '%  ' + 
+				_predictZero().toFixed(1) + '%  ' +
 				_predictNegative().toFixed(1) + '%\n' +
         (localStorage.getItem('trainLOG') || '')
     );
@@ -367,7 +414,7 @@ function doStep() {
     
     // if possition is not changed
     if (prevAgentPos.x === agentPos.x && prevAgentPos.y === agentPos.y) {
-    		reward = -1.1;
+    		reward = -3;
     }
 
 		//if (reward === 0) {
@@ -384,7 +431,7 @@ function doStep() {
 
 function getAction() {
     let usePredictedAction, predAction, max;
-    if (Math.random() < 0.8) {
+    if (Math.random() < ownStepProbability) {
         const pred = _predictAtPoint();
         max = Math.max.apply(null, pred);
         predAction = pred.indexOf(max);
@@ -470,14 +517,18 @@ function _addHistoryItemIDs(stepsHistory) {
 
 function _predictPositive(neg, allItemsMatching) {
 	  const hist = shuffle(stepsHistory.filter(e =>
-  			(!neg && e[1][0] > 0.9 || neg && e[1][0] < neg) && _isAgentNearTarget(e)
-    )).slice(-2000);
+  			(!neg && e[1][0] >= 0.33 || neg && e[1][0] <= -0.33) && _isAgentNearTarget(e)
+    )).slice(-1000);
+    if (hist.length === 0) {
+		    console.info((neg ? '---:' : '+++:'), "0 items");
+				return 100;
+    }
     const tensor = tf.tensor2d(hist.map(e => e[0]));
     //const percent = 100 * model.predict(tensor).dataSync().reduce((a,b) => a+b) / hist.map(e=>e[1][0]).reduce((a,b) => a+b);
     const L = hist.length;
     const Pred = tf.tidy(() => model.predict(tensor).dataSync());
     tf.nextFrame();
-    const fit = Pred.filter(e => !neg && e>0.6 || neg && e<-0.6).length;
+    const fit = Pred.filter(e => !neg && e>=0.33 || neg && e<=-0.33).length;
     const percent = 100 * (L - Math.min(L, Pred.map((pr, i) => Math.abs(pr / hist[i][1][0] - 1)).reduce((a, b) => a + b))) / L;      
     // model.predict(tensor).print();
     console.info((neg ? '---:' : '+++:'), percent.toFixed(3) + ' % (' + fit + '/' + L + ')');
@@ -490,12 +541,16 @@ function _predictPositive(neg, allItemsMatching) {
 //).map(e => e[0]))).dataSync().filter(e => e<0.6);
 
 function _predictNegative(allItemsMatching) {
-    return _predictPositive(-0.9, allItemsMatching);
+    return _predictPositive(true, allItemsMatching);
 }
 
 
 function _predictZero() {
-    const hist = shuffle(stepsHistory.filter((e, i) => i < 10000 && e[1][0] > -0.3 && e[1][0] < 0.3)).slice(-300);
+    const hist = shuffle(stepsHistory.filter((e, i) => i < 10000 && e[1][0] > -0.33 && e[1][0] < 0.33)).slice(-1000);
+    if (hist.length === 0) {
+		    console.info("000: 0 items");
+    		return 0;
+    }
     const tensor = tf.tensor2d(hist.map(e => e[0]));
     const L = hist.length;
     const predSum = model.predict(tensor).dataSync().reduce((a, b) => a + b);
