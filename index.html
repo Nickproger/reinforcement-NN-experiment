@@ -66,473 +66,481 @@ button {
 
 
 <script>
-let 
+let
 
-		// Config
-		lambda = 0.7, // 0.68
-    maxMinutesForTrain = 15,
-    ownStepProbability = 0.5,
-    stepsForTrainSet = 10000,
-    optimizerAccuracy = 0.001,// 0.001,
-    epochs = 1,
+	// Config
+	lambda = 0.7, // 0.68
+	maxMinutesForTrain = 15,
+	ownStepProbability = 0.5,
+	stepsForTrainSet = 10000,
+	optimizerAccuracy = 0.001, // 0.001,
+	epochs = 1,
 
-    
-    map = [],
-    stepsHistory = [],
-    agentPos, result = 0,
-    model = defineNN(),
-    d,a, stepRes, countedReward;
-    
+
+	map = [],
+	stepsHistory = [],
+	agentPos, result = 0,
+	model = defineNN(),
+	d, a, stepRes, countedReward;
+
 var _trainingInProgress, _worldCycleInterval, _autoReloader, _stepsFromLastPositiveResult = 0;
 
 init();
 
 
 function init() {
-    let newPos;
-    console.clear();
-    for (let x = 0; x < 10; x++) {
-        map[x] = [];
-        for (let y = 0; y < 10; y++) {
-            map[x][y] = 0;
-        }
-    }
-    for (let i=0; i<5; i++) {
-	    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
-    	newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
-    }
-    agentPos = _findEmptyPos(); map[agentPos.x][agentPos.y] = 0.5;
-    drawMap();
-    //console.log(map);
-//    let json = localStorage.getItem('stepsHistory');
-//    stepsHistory = json ? JSON.parse(json) : []; 
-		ownStepProbability = localStorage.getItem('ownStepProbability')===null
-    	? ownStepProbability
-      : +localStorage.getItem('ownStepProbability');
+	let newPos;
+	console.clear();
+	for (let x = 0; x < 10; x++) {
+		map[x] = [];
+		for (let y = 0; y < 10; y++) {
+			map[x][y] = 0;
+		}
+	}
+	for (let i = 0; i < 5; i++) {
+		newPos = _findEmptyPos();
+		map[newPos.x][newPos.y] = -1;
+		newPos = _findEmptyPos();
+		map[newPos.x][newPos.y] = 1;
+	}
+	agentPos = _findEmptyPos();
+	map[agentPos.x][agentPos.y] = 0.5;
+	drawMap();
+	//console.log(map);
+	//    let json = localStorage.getItem('stepsHistory');
+	//    stepsHistory = json ? JSON.parse(json) : []; 
+	ownStepProbability = localStorage.getItem('ownStepProbability') === null ?
+		ownStepProbability :
+		+localStorage.getItem('ownStepProbability');
 
-    
-    // Reset very long training.
-		_autoReloader = setTimeout(_saveAndReset, maxMinutesForTrain*60*1000);
 
-    loadModel().then(runWorld);
+	// Reset very long training.
+	_autoReloader = setTimeout(_saveAndReset, maxMinutesForTrain * 60 * 1000);
+
+	loadModel().then(runWorld);
 }
 
 function doWorldCycle() {
 
-    stepsHistory.push([_mapToNNInput(map)]);
-    stepRes = doStep();
-    a = stepRes.action;
-    stepsHistory[stepsHistory.length-1][0].push(
-    	a===0?1:0, a===0?1:0, a===0?1:0,
-      a===1?1:0, a===1?1:0, a===1?1:0,
-      a===2?1:0, a===2?1:0, a===2?1:0,
-      a===3?1:0, a===3?1:0, a===3?1:0,
-    );
-    
-    // if agent take the reward ("green apple")
-    if (stepRes.reward === -1 || stepRes.reward === 1) {
-				let pos = _findEmptyPos();
-        map[pos.x][pos.y] = stepRes.reward;
-        result = result + stepRes.reward;
-    //    drawMap();
-    }
+	stepsHistory.push([_mapToNNInput(map)]);
+	stepRes = doStep();
+	a = stepRes.action;
+	stepsHistory[stepsHistory.length - 1][0].push(
+		a === 0 ? 1 : 0, a === 0 ? 1 : 0, a === 0 ? 1 : 0,
+		a === 1 ? 1 : 0, a === 1 ? 1 : 0, a === 1 ? 1 : 0,
+		a === 2 ? 1 : 0, a === 2 ? 1 : 0, a === 2 ? 1 : 0,
+		a === 3 ? 1 : 0, a === 3 ? 1 : 0, a === 3 ? 1 : 0,
+	);
 
-		if (stepRes.reward === -1) {
-    		stepRes.reward = -2;
-    } 
+	// if agent take the reward ("green apple")
+	if (stepRes.reward === -1 || stepRes.reward === 1) {
+		let pos = _findEmptyPos();
+		map[pos.x][pos.y] = stepRes.reward;
+		result = result + stepRes.reward;
+		//    drawMap();
+	}
 
-		_stepsFromLastPositiveResult++;
-    if (stepRes.reward === 1 || _stepsFromLastPositiveResult === 10) {
-	    _stepsFromLastPositiveResult = 0;
-      ownStepProbability = stepRes.reward === 1
-        ? 1
-        : Math.max(0, +(ownStepProbability - 0.2).toFixed(1));
-      console.log('ownStepProbability >> ', ownStepProbability);
-    }
-    
+	if (stepRes.reward === -1) {
+		stepRes.reward = -2;
+	}
 
-		countedReward = stepRes.reward + lambda * Math.max.apply(null, _predictAtPoint());
-        //0.75*(stepRes.reward + 0.25 * Math.max.apply(null, _predictAtPoint().concat([0])));
-        //0.9 * (stepRes.reward + 0.6 * Math.max.apply(null, _predictAtPoint().concat([0])));
-        //0.95*stepRes.reward + 0.5 * Math.max.apply(null, _predictAtPoint().concat([0]));
-    
-    stepsHistory[stepsHistory.length-1].push([countedReward]);
+	_stepsFromLastPositiveResult++;
+	if (stepRes.reward === 1 || _stepsFromLastPositiveResult === 10) {
+		_stepsFromLastPositiveResult = 0;
+		ownStepProbability = stepRes.reward === 1 ?
+			1 :
+			Math.max(0, +(ownStepProbability - 0.2).toFixed(1));
+		console.log('ownStepProbability >> ', ownStepProbability);
+	}
 
 
+	countedReward = stepRes.reward + lambda * Math.max.apply(null, _predictAtPoint());
+	//0.75*(stepRes.reward + 0.25 * Math.max.apply(null, _predictAtPoint().concat([0])));
+	//0.9 * (stepRes.reward + 0.6 * Math.max.apply(null, _predictAtPoint().concat([0])));
+	//0.95*stepRes.reward + 0.5 * Math.max.apply(null, _predictAtPoint().concat([0]));
 
-
-	 // console.log("Reward: " + stepRes.reward.toFixed(2), '  counted: ' + countedReward.toFixed(2), stepsHistory[stepsHistory.length-1]);
-
-    //if (countedReward > 0.5) {
-    //	console.log('Reward: ' + countedReward.toFixed(3));
-    //}
-
-//   if (Math.abs(countedReward) > 0.95) {
-//        //	countedReward > 0.3 && console.log('Reward: ' + countedReward.toFixed(3), stepsHistory[stepsHistory.length-1]);
-//        // update Rewards to several previous steps which leeded to this Reward
-//        let hLen = stepsHistory.length;
-//        if (hLen > 1) {stepsHistory[hLen - 2][1][0] += lambda * countedReward;}
-//        if (hLen > 2) {stepsHistory[hLen - 3][1][0] += lambda * lambda * countedReward;}
-//        if (hLen > 3) {stepsHistory[hLen - 4][1][0] += lambda * lambda * lambda * countedReward;}
-//    }
-
-
-
-   drawMap();
-
-
-    //let hLen = stepsHistory.length;
-    //stepsHistory[hLen-1].push([isMapStateTheSame ? 0 : stepRes.reward]);
-    //if (hLen > 1) {
-    ////	stepsHistory[hLen-2][1][0] = 0.75 * (stepsHistory[hLen-2][1][0] +  0.25 * stepsHistory[hLen-2][1][0]);
-    //	stepsHistory[hLen-2][1][0] = 0.9 * (stepsHistory[hLen-2][1][0] +  0.6 * stepsHistory[hLen-2][1][0]);
-    //}
+	stepsHistory[stepsHistory.length - 1].push([countedReward]);
 
 
 
 
-    if (stepsHistory.length > stepsForTrainSet) {
-        pauseWorld();
-        drawMap(true);
-        setTimeout(runTrain, 1000);
-    }
+	// console.log("Reward: " + stepRes.reward.toFixed(2), '  counted: ' + countedReward.toFixed(2), stepsHistory[stepsHistory.length-1]);
+
+	//if (countedReward > 0.5) {
+	//	console.log('Reward: ' + countedReward.toFixed(3));
+	//}
+
+	//   if (Math.abs(countedReward) > 0.95) {
+	//        //	countedReward > 0.3 && console.log('Reward: ' + countedReward.toFixed(3), stepsHistory[stepsHistory.length-1]);
+	//        // update Rewards to several previous steps which leeded to this Reward
+	//        let hLen = stepsHistory.length;
+	//        if (hLen > 1) {stepsHistory[hLen - 2][1][0] += lambda * countedReward;}
+	//        if (hLen > 2) {stepsHistory[hLen - 3][1][0] += lambda * lambda * countedReward;}
+	//        if (hLen > 3) {stepsHistory[hLen - 4][1][0] += lambda * lambda * lambda * countedReward;}
+	//    }
+
+
+
+	drawMap();
+
+
+	//let hLen = stepsHistory.length;
+	//stepsHistory[hLen-1].push([isMapStateTheSame ? 0 : stepRes.reward]);
+	//if (hLen > 1) {
+	////	stepsHistory[hLen-2][1][0] = 0.75 * (stepsHistory[hLen-2][1][0] +  0.25 * stepsHistory[hLen-2][1][0]);
+	//	stepsHistory[hLen-2][1][0] = 0.9 * (stepsHistory[hLen-2][1][0] +  0.6 * stepsHistory[hLen-2][1][0]);
+	//}
+
+
+	if (stepsHistory.length > stepsForTrainSet) {
+		pauseWorld();
+		drawMap(true);
+		setTimeout(runTrain, 1000);
+	}
 }
 
 function runWorld() {
-    if (!_worldCycleInterval) {
-        _worldCycleInterval = setInterval(doWorldCycle, 0);
-    }
+	if (!_worldCycleInterval) {
+		_worldCycleInterval = setInterval(doWorldCycle, 0);
+	}
 }
 
 function pauseWorld(isManual) {
-    clearInterval(_worldCycleInterval);
-    _worldCycleInterval = undefined;
+	clearInterval(_worldCycleInterval);
+	_worldCycleInterval = undefined;
 }
 
 function stopReloads() {
-    clearTimeout(_autoReloader);
+	clearTimeout(_autoReloader);
 }
 
 
 function defineNN() {
-    const model = tf.sequential({
-        layers: [
-            tf.layers.dense({units: 312, activation: 'elu', inputShape: 312}),
-						tf.layers.dense({units: 312, activation: 'elu'}),
-						tf.layers.dropout({rate: 0.1}),
-            tf.layers.dense({units: 312, activation: 'elu'}),
-						tf.layers.dropout({rate: 0.1}),
-            tf.layers.dense({units: 312, activation: 'elu'}),
-						tf.layers.dropout({rate: 0.1}),
-            tf.layers.dense({units: 312, activation: 'elu'}),
-						tf.layers.dropout({rate: 0.1}),
-            tf.layers.dense({units: 312, activation: 'elu'}),
-						tf.layers.dropout({rate: 0.1}),
-            tf.layers.dense({units: 312, activation: 'elu'}),
-						tf.layers.dropout({rate: 0.1}),
-            tf.layers.dense({units: 312, activation: 'elu'}),
-
-//            tf.layers.dense({units: 204, activation: 'relu'}),
-//            tf.layers.dense({units: 104, activation: 'relu'}),
-//            tf.layers.dense({units: 4, activation: 'relu'}),
-
-//			tf.layers.dense({units: 2,   activation: 'tanh'})
-			tf.layers.dense({units: 1,   activation: 'linear'})
-        ]
-    });
-    _compileModel(model);
-    return model;
+	const model = tf.sequential({
+		layers: [
+			tf.layers.dense({units: 312, activation: 'elu', inputShape: 312}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dropout({rate: 0.1}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dropout({rate: 0.1}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dropout({rate: 0.1}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dropout({rate: 0.1}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dropout({rate: 0.1}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dropout({rate: 0.1}),
+			tf.layers.dense({units: 312,activation: 'elu'}),
+			tf.layers.dense({units: 1, activation: 'linear'})
+		]
+	});
+	_compileModel(model);
+	return model;
 }
 
 function _compileModel(model) {
-    model.compile({
-        // optimizer: tf.train.sgd(0.2),
-        optimizer: tf.train.sgd(optimizerAccuracy),
-        loss: 'meanSquaredError'
+	model.compile({
+		// optimizer: tf.train.sgd(0.2),
+		optimizer: tf.train.sgd(optimizerAccuracy),
+		loss: 'meanSquaredError'
 
-	//optimizer: tf.train.adam(0.01),
-    //loss: 'categoricalCrossentropy',
-    //metrics: ['accuracy']
+		//optimizer: tf.train.adam(0.01),
+		//loss: 'categoricalCrossentropy',
+		//metrics: ['accuracy']
 
-	//optimizer: tf.train.adam(0.1),
-	//loss: 'meanSquaredError'
+		//optimizer: tf.train.adam(0.1),
+		//loss: 'meanSquaredError'
 
-});
+	});
 }
 
 function train(stepsHistory) {
-    return model.fit(
-        tf.tensor2d(stepsHistory.map(el => el[0])),
-        tf.tensor2d(stepsHistory.map(el => el[1])), {
-            epochs: epochs,
-            shuffle: true,
-            //batch_size: 1000
-        }
-    ).then(() => model)
+	return model.fit(
+		tf.tensor2d(stepsHistory.map(el => el[0])),
+		tf.tensor2d(stepsHistory.map(el => el[1])), {
+			epochs: epochs,
+			shuffle: true,
+			//batch_size: 1000
+		}
+	).then(() => model)
 }
 
 function runTrain(_innerRun) {
-    if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
-        if (!_innerRun) {
-            // stepsHistory = _getUniqueHistory(stepsHistory);
-            //stepsHistory = _getJustPosNearTarget(stepsHistory);  
-            stepsHistory = stepsHistory.filter(e => !isNaN(e[1][0]));
-            stepsHistory = shuffle(stepsHistory);  
-            //let i = 0;
-            //stepsHistory = stepsHistory.filter(e => e[1][0]>=0.5 || e[1][0]<=-0.5 || e[1][0]>-0.5 && e[1][0]<0.5 && i<3000 && ++i );
+	if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
+		if (!_innerRun) {
+			// stepsHistory = _getUniqueHistory(stepsHistory);
+			//stepsHistory = _getJustPosNearTarget(stepsHistory);  
+			stepsHistory = stepsHistory.filter(e => !isNaN(e[1][0]));
+			stepsHistory = shuffle(stepsHistory);
+			//let i = 0;
+			//stepsHistory = stepsHistory.filter(e => e[1][0]>=0.5 || e[1][0]<=-0.5 || e[1][0]>-0.5 && e[1][0]<0.5 && i<3000 && ++i );
 
-//stepsHistory = stepsHistory.slice(0, stepsHistory.length - stepsHistory.length % 1000);
-        }
-        d = new Date();
-        console.log(
-        	'[' + d.getHours() + ':' + d.getMinutes() + ':' + d.getSeconds() + '] ' +
-         'items:', stepsHistory.length + ' train...'
-        );
+			//stepsHistory = stepsHistory.slice(0, stepsHistory.length - stepsHistory.length % 1000);
+		}
+		d = new Date();
+		console.log(
+			'[' + d.getHours() + ':' + d.getMinutes() + ':' + d.getSeconds() + '] ' +
+			'items:', stepsHistory.length + ' train...'
+		);
 
-        train(stepsHistory).then(() => {
-							if (_predictPositive(undefined, true) < 80 || Math.abs(_predictZero()) > 20 || _predictNegative(true) < 80) {
-            		if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
-                	_trainingInProgress = setTimeout(() => runTrain('_innerRun'), 100);
-                }
-			        } else {
-								_saveAndReset();
-							}
-				});
-    }
+		train(stepsHistory).then(() => {
+			if (_predictPositive(undefined, true) < 80 || Math.abs(_predictZero()) > 20 || _predictNegative(true) < 80) {
+				if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
+					_trainingInProgress = setTimeout(() => runTrain('_innerRun'), 100);
+				}
+			} else {
+				_saveAndReset();
+			}
+		});
+	}
 }
 
 function _getJustPosNearTarget(arr) {
-   return arr.filter(_isAgentNearTarget);
+	return arr.filter(_isAgentNearTarget);
 }
 
 function _isAgentNearTarget(e) {
-      let i=0;
-      const m = e[0];
-   		for(;i<m.length; i=i+3) {
-      	if (m[i+1] == 1) break;
-      }
-      return (i>0 && (m[i-1] || m[i-3]))
-      		|| (i<297 && (m[i+3] || m[i+5]))
-      		|| (i>27 && (m[i-30] || m[i-28]))
-      		|| (i<270 && (m[i+30] || m[i+32]));
+	let i = 0;
+	const m = e[0];
+	for (; i < m.length; i = i + 3) {
+		if (m[i + 1] == 1) break;
+	}
+	return (i > 0 && (m[i - 1] || m[i - 3])) ||
+		(i < 297 && (m[i + 3] || m[i + 5])) ||
+		(i > 27 && (m[i - 30] || m[i - 28])) ||
+		(i < 270 && (m[i + 30] || m[i + 32]));
 }
 
 function pauseTrain(isManual) {
-    console.log('pause training ...');
-    clearTimeout(_trainingInProgress);
-    _trainingInProgress = undefined;
+	console.log('pause training ...');
+	clearTimeout(_trainingInProgress);
+	_trainingInProgress = undefined;
 }
 
 
 function _saveAndReset() {
-    pauseTrain();
-    saveModel();
-    
-		let _lastRes = localStorage.getItem('_lastRes') || 0;
-    let _direction = localStorage.getItem('_direction') || 'up';
-		localStorage.setItem('_lastRes', result);
-    if (result>=_lastRes && _direction === 'up' || result<_lastRes && _direction === 'down' ) {
-	    localStorage.setItem('ownStepProbability', Math.min((ownStepProbability+0.1).toFixed(2),1));
-      localStorage.setItem('_direction', 'up');
-    } else {
-	    localStorage.setItem('ownStepProbability', Math.max((ownStepProbability-0.1).toFixed(2),0));
-      localStorage.setItem('_direction', 'down');
-    }
-    
-    localStorage.setItem('trainLOG', '' + 
-        new Date().getDate() + '-' +
-				new Date().toTimeString().substr(0, 8) + ' ' +
-        Math.round(ownStepProbability*100) + '%   \t' +
-        result + '/' + stepsHistory.length + '   \t' + 
-				_predictPositive().toFixed(1) + '%  ' + 
-				_predictZero().toFixed(1) + '%  ' +
-				_predictNegative().toFixed(1) + '%\n' +
-        (localStorage.getItem('trainLOG') || '')
-    );
-    
-//    stepsHistory =
- //   	stepsHistory.filter(h => h[1][0] > 0.99 && h[1][0] < 1.01).slice(-10)
-//        .concat(stepsHistory.filter(h => h[1][0] > -1.01 && h[1][0] < -0.99).slice(-100))
-//        .concat(stepsHistory.filter(h => h[1][0] > -0.1 && h[1][0] < 0.1).slice(-10));
-//    stepsHistory.forEach(h => {h.splice(2,1);});
-//    let json = JSON.stringify(stepsHistory);
-//    console.log('stepsHistory: ', (json.length / (1024 * 1024)).toFixed(3) + ' MB');
-//    localStorage.setItem('stepsHistory', json); 
+	pauseTrain();
+	saveModel();
+
+	let _lastRes = localStorage.getItem('_lastRes') || 0;
+	let _direction = localStorage.getItem('_direction') || 'up';
+	localStorage.setItem('_lastRes', result);
+	if (result >= _lastRes && _direction === 'up' || result < _lastRes && _direction === 'down') {
+		localStorage.setItem('ownStepProbability', Math.min((ownStepProbability + 0.1).toFixed(2), 1));
+		localStorage.setItem('_direction', 'up');
+	} else {
+		localStorage.setItem('ownStepProbability', Math.max((ownStepProbability - 0.1).toFixed(2), 0));
+		localStorage.setItem('_direction', 'down');
+	}
+
+	localStorage.setItem('trainLOG', '' +
+		new Date().getDate() + '-' +
+		new Date().toTimeString().substr(0, 8) + ' ' +
+		Math.round(ownStepProbability * 100) + '%   \t' +
+		result + '/' + stepsHistory.length + '   \t' +
+		_predictPositive().toFixed(1) + '%  ' +
+		_predictZero().toFixed(1) + '%  ' +
+		_predictNegative().toFixed(1) + '%\n' +
+		(localStorage.getItem('trainLOG') || '')
+	);
+
+	//    stepsHistory =
+	//   	stepsHistory.filter(h => h[1][0] > 0.99 && h[1][0] < 1.01).slice(-10)
+	//        .concat(stepsHistory.filter(h => h[1][0] > -1.01 && h[1][0] < -0.99).slice(-100))
+	//        .concat(stepsHistory.filter(h => h[1][0] > -0.1 && h[1][0] < 0.1).slice(-10));
+	//    stepsHistory.forEach(h => {h.splice(2,1);});
+	//    let json = JSON.stringify(stepsHistory);
+	//    console.log('stepsHistory: ', (json.length / (1024 * 1024)).toFixed(3) + ' MB');
+	//    localStorage.setItem('stepsHistory', json); 
 
 
-    setTimeout(function(){location.reload();}, 3000);
+	setTimeout(function() {
+		location.reload();
+	}, 3000);
 }
 
 
 function doStep() {
-    let action = getAction();
-    let reward = 0;
-    let prevAgentPos = {
-        x: agentPos.x,
-        y: agentPos.y
-    };
-    //console.log(action);
-    switch (action) {
-        case 0: // left 
-            if (agentPos.y > 0) {
-                map[agentPos.x][agentPos.y] = 0;
-                agentPos.y = agentPos.y - 1;
-                reward = map[agentPos.x][agentPos.y];
-                //console.log(1111, reward,agentPos);
-                map[agentPos.x][agentPos.y] = 0.5;
-            }
-            break;
-        case 1: // down
-            if (agentPos.x < 9) {
-                map[agentPos.x][agentPos.y] = 0;
-                agentPos.x = agentPos.x + 1;
-                reward = map[agentPos.x][agentPos.y];
-                //console.log(22222, reward, agentPos);
-                map[agentPos.x][agentPos.y] = 0.5;
-            }
-            break;
-        case 2: // right
-            if (agentPos.y < 9) {
-                map[agentPos.x][agentPos.y] = 0;
-                agentPos.y = agentPos.y + 1;
-                reward = map[agentPos.x][agentPos.y];
-                //console.log(3333, reward,agentPos);
+	let action = getAction();
+	let reward = 0;
+	let prevAgentPos = {
+		x: agentPos.x,
+		y: agentPos.y
+	};
+	//console.log(action);
+	switch (action) {
+		case 0: // left 
+			if (agentPos.y > 0) {
+				map[agentPos.x][agentPos.y] = 0;
+				agentPos.y = agentPos.y - 1;
+				reward = map[agentPos.x][agentPos.y];
+				//console.log(1111, reward,agentPos);
+				map[agentPos.x][agentPos.y] = 0.5;
+			}
+			break;
+		case 1: // down
+			if (agentPos.x < 9) {
+				map[agentPos.x][agentPos.y] = 0;
+				agentPos.x = agentPos.x + 1;
+				reward = map[agentPos.x][agentPos.y];
+				//console.log(22222, reward, agentPos);
+				map[agentPos.x][agentPos.y] = 0.5;
+			}
+			break;
+		case 2: // right
+			if (agentPos.y < 9) {
+				map[agentPos.x][agentPos.y] = 0;
+				agentPos.y = agentPos.y + 1;
+				reward = map[agentPos.x][agentPos.y];
+				//console.log(3333, reward,agentPos);
 
-                map[agentPos.x][agentPos.y] = 0.5;
-            }
-            break;
-        case 3: // up
-            if (agentPos.x > 0) {
-                map[agentPos.x][agentPos.y] = 0;
-                agentPos.x = agentPos.x - 1;
-                reward = map[agentPos.x][agentPos.y];
-                //console.log(44444, reward,agentPos);
-                map[agentPos.x][agentPos.y] = 0.5;
-            }
-            break;
-    }
-    
-    // if possition is not changed
-    if (prevAgentPos.x === agentPos.x && prevAgentPos.y === agentPos.y) {
-    		reward = -3;
-    }
+				map[agentPos.x][agentPos.y] = 0.5;
+			}
+			break;
+		case 3: // up
+			if (agentPos.x > 0) {
+				map[agentPos.x][agentPos.y] = 0;
+				agentPos.x = agentPos.x - 1;
+				reward = map[agentPos.x][agentPos.y];
+				//console.log(44444, reward,agentPos);
+				map[agentPos.x][agentPos.y] = 0.5;
+			}
+			break;
+	}
 
-		//if (reward === 0) {
-    //		reward = -0.05;
-    //}
+	// if possition is not changed
+	if (prevAgentPos.x === agentPos.x && prevAgentPos.y === agentPos.y) {
+		reward = -3;
+	}
 
-    return {
-        action,
-        reward,
-        agentPos: prevAgentPos     
-    };
+	//if (reward === 0) {
+	//		reward = -0.05;
+	//}
+
+	return {
+		action,
+		reward,
+		agentPos: prevAgentPos
+	};
 
 }
 
 function getAction() {
-    let usePredictedAction, predAction, max;
-    if (Math.random() < ownStepProbability) {
-        const pred = _predictAtPoint();
-        max = Math.max.apply(null, pred);
-        predAction = pred.indexOf(max);
-        usePredictedAction = true;//Math.abs(max > 0.5);
-    } else {
-        usePredictedAction = false;
-    }
-    //if (usePredictedAction) {
-    //   console.log('move: ' + ['LEFT', 'DOWN', 'RIGHT', 'UP'][predAction],/* max*/);
-    //}
-    return usePredictedAction ? predAction : Math.floor(Math.random() * 4);
+	let usePredictedAction, predAction, max;
+	if (Math.random() < ownStepProbability) {
+		const pred = _predictAtPoint();
+		max = Math.max.apply(null, pred);
+		predAction = pred.indexOf(max);
+		usePredictedAction = true; //Math.abs(max > 0.5);
+	} else {
+		usePredictedAction = false;
+	}
+	//if (usePredictedAction) {
+	//   console.log('move: ' + ['LEFT', 'DOWN', 'RIGHT', 'UP'][predAction],/* max*/);
+	//}
+	return usePredictedAction ? predAction : Math.floor(Math.random() * 4);
 }
 
 function drawMap(showBg, brightness) {
-    var html = '',
-        bgCss, pred, max, actMarker, hint;
-    for (let x = 0; x < 10; x++) {
-        html += '<tr>';
-        for (let y = 0; y < 10; y++) {
-            if (showBg && map[x][y] === 0) {
-                pred = _predictAtPoint(x, y);
-                max = Math.max.apply(null, pred);
-                actMarker = ['<', 'v', '>', '^', ' '][pred.indexOf(max)];
-                bgCss = ' style="color:rgba(' +
-                		(max>=0?'255':'0')+',200,'+(max<0?'255':'0')+',' + 
-                  	(0.9*Math.abs(max) / (brightness || 1) + 0.1) + 
-                  ');" ';
-                let t = pred.map(e=>e.toFixed(3));
-                hint = ' title="<'+t[0]+"\rv"+t[1]+"\r>"+t[2]+"\r^"+t[3]+ '" ';
-            } else {
-                bgCss = '';
-                hint = '';
-            }
+	var html = '',
+		bgCss, pred, max, actMarker, hint;
+	for (let x = 0; x < 10; x++) {
+		html += '<tr>';
+		for (let y = 0; y < 10; y++) {
+			if (showBg && map[x][y] === 0) {
+				pred = _predictAtPoint(x, y);
+				max = Math.max.apply(null, pred);
+				actMarker = ['<', 'v', '>', '^', ' '][pred.indexOf(max)];
+				bgCss = ' style="color:rgba(' +
+					(max >= 0 ? '255' : '0') + ',200,' + (max < 0 ? '255' : '0') + ',' +
+					(0.9 * Math.abs(max) / (brightness || 1) + 0.1) +
+					');" ';
+				let t = pred.map(e => e.toFixed(3));
+				hint = ' title="<' + t[0] + "\rv" + t[1] + "\r>" + t[2] + "\r^" + t[3] + '" ';
+			} else {
+				bgCss = '';
+				hint = '';
+			}
 
-            switch (map[x][y]) {
-                case 0: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ' ') + '</td>'; break;
-                case -1: html += '<td style="color:#F00;">X</td>'; break;
-                case 1: html += '<td style="color:#0C0;">@</td>'; break;
-                case 0.5: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ':)') + '</td>'; break;
-            }
+			switch (map[x][y]) {
+				case 0:
+					html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ' ') + '</td>';
+					break;
+				case -1:
+					html += '<td style="color:#F00;">X</td>';
+					break;
+				case 1:
+					html += '<td style="color:#0C0;">@</td>';
+					break;
+				case 0.5:
+					html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ':)') + '</td>';
+					break;
+			}
 
-        }
-        html += '</tr>\n';
-    }
-    //console.log(html);
-    document.getElementById('map').innerHTML = html;
-    document.getElementById('result').innerHTML = result + ' / ' + stepsHistory.length;
+		}
+		html += '</tr>\n';
+	}
+	//console.log(html);
+	document.getElementById('map').innerHTML = html;
+	document.getElementById('result').innerHTML = result + ' / ' + stepsHistory.length;
 
-		if (showBg) {
-	    enableCellsMarking();
-    }
+	if (showBg) {
+		enableCellsMarking();
+	}
 
 }
 
 function _findEmptyPos() {
-    let x, y;
-    do {
-        x = Math.floor(Math.random() * 10);
-        y = Math.floor(Math.random() * 10);
-    } while (map[x][y] !== 0);
-    return {x, y};
+	let x, y;
+	do {
+		x = Math.floor(Math.random() * 10);
+		y = Math.floor(Math.random() * 10);
+	} while (map[x][y] !== 0);
+	return {
+		x,
+		y
+	};
 }
 
 function _getUniqueHistory(stepsHistory) {
-    stepsHistory = _addHistoryItemIDs(stepsHistory);
-    const fHistory = [];
-    for (let i = stepsHistory.length - 1; i >= 0; i--) {
-        if (!fHistory.some(el => el[2] === stepsHistory[i][2])) {
-            fHistory.push(stepsHistory[i]);
-        }
-    }
-    return fHistory;
+	stepsHistory = _addHistoryItemIDs(stepsHistory);
+	const fHistory = [];
+	for (let i = stepsHistory.length - 1; i >= 0; i--) {
+		if (!fHistory.some(el => el[2] === stepsHistory[i][2])) {
+			fHistory.push(stepsHistory[i]);
+		}
+	}
+	return fHistory;
 }
 
 function _addHistoryItemIDs(stepsHistory) {
-    stepsHistory.forEach(el => {
-        if (!el[2]) {
-            el[2] = el[0].join(',');
-        }
-    });
-    return stepsHistory;
+	stepsHistory.forEach(el => {
+		if (!el[2]) {
+			el[2] = el[0].join(',');
+		}
+	});
+	return stepsHistory;
 }
 
 function _predictPositive(neg, allItemsMatching) {
-	  const hist = shuffle(stepsHistory.filter(e =>
-  			(!neg && e[1][0] >= 0.33 || neg && e[1][0] <= -0.33) && _isAgentNearTarget(e)
-    )).slice(-1000);
-    if (hist.length === 0) {
-		    console.info((neg ? '---:' : '+++:'), "0 items");
-				return 100;
-    }
-    const tensor = tf.tensor2d(hist.map(e => e[0]));
-    //const percent = 100 * model.predict(tensor).dataSync().reduce((a,b) => a+b) / hist.map(e=>e[1][0]).reduce((a,b) => a+b);
-    const L = hist.length;
-    const Pred = tf.tidy(() => model.predict(tensor).dataSync());
-    tf.nextFrame();
-    const fit = Pred.filter(e => !neg && e>=0.33 || neg && e<=-0.33).length;
-    const percent = 100 * (L - Math.min(L, Pred.map((pr, i) => Math.abs(pr / hist[i][1][0] - 1)).reduce((a, b) => a + b))) / L;      
-    // model.predict(tensor).print();
-    console.info((neg ? '---:' : '+++:'), percent.toFixed(3) + ' % (' + fit + '/' + L + ')');
-    return !allItemsMatching || fit === L ? percent : 0;
+	const hist = shuffle(stepsHistory.filter(e =>
+		(!neg && e[1][0] >= 0.33 || neg && e[1][0] <= -0.33) && _isAgentNearTarget(e)
+	)).slice(-1000);
+	if (hist.length === 0) {
+		console.info((neg ? '---:' : '+++:'), "0 items");
+		return 100;
+	}
+	const tensor = tf.tensor2d(hist.map(e => e[0]));
+	//const percent = 100 * model.predict(tensor).dataSync().reduce((a,b) => a+b) / hist.map(e=>e[1][0]).reduce((a,b) => a+b);
+	const L = hist.length;
+	const Pred = tf.tidy(() => model.predict(tensor).dataSync());
+	tf.nextFrame();
+	const fit = Pred.filter(e => !neg && e >= 0.33 || neg && e <= -0.33).length;
+	const percent = 100 * (L - Math.min(L, Pred.map((pr, i) => Math.abs(pr / hist[i][1][0] - 1)).reduce((a, b) => a + b))) / L;
+	// model.predict(tensor).print();
+	console.info((neg ? '---:' : '+++:'), percent.toFixed(3) + ' % (' + fit + '/' + L + ')');
+	return !allItemsMatching || fit === L ? percent : 0;
 }
 
 
@@ -541,60 +549,60 @@ function _predictPositive(neg, allItemsMatching) {
 //).map(e => e[0]))).dataSync().filter(e => e<0.6);
 
 function _predictNegative(allItemsMatching) {
-    return _predictPositive(true, allItemsMatching);
+	return _predictPositive(true, allItemsMatching);
 }
 
 
 function _predictZero() {
-    const hist = shuffle(stepsHistory.filter((e, i) => i < 10000 && e[1][0] > -0.33 && e[1][0] < 0.33)).slice(-1000);
-    if (hist.length === 0) {
-		    console.info("000: 0 items");
-    		return 0;
-    }
-    const tensor = tf.tensor2d(hist.map(e => e[0]));
-    const L = hist.length;
-    const predSum = model.predict(tensor).dataSync().reduce((a, b) => a + b);
-    const expectSum = hist.reduce((a, b) => a + b[1][0], 0);
-    const percent = tf.tidy(() => 
-	    100 * Math.abs(1 - (L - predSum) / Math.max(L - expectSum, 1))
-     );
-    tf.nextFrame();
-    //console.info(predSum.toFixed(3) + ' / '  + expectSum.toFixed(3));
-    console.info("000:", percent.toFixed(3) + ' % (' + hist.length + ')');
-    return percent;
+	const hist = shuffle(stepsHistory.filter((e, i) => i < 10000 && e[1][0] > -0.33 && e[1][0] < 0.33)).slice(-1000);
+	if (hist.length === 0) {
+		console.info("000: 0 items");
+		return 0;
+	}
+	const tensor = tf.tensor2d(hist.map(e => e[0]));
+	const L = hist.length;
+	const predSum = model.predict(tensor).dataSync().reduce((a, b) => a + b);
+	const expectSum = hist.reduce((a, b) => a + b[1][0], 0);
+	const percent = tf.tidy(() =>
+		100 * Math.abs(1 - (L - predSum) / Math.max(L - expectSum, 1))
+	);
+	tf.nextFrame();
+	//console.info(predSum.toFixed(3) + ' / '  + expectSum.toFixed(3));
+	console.info("000:", percent.toFixed(3) + ' % (' + hist.length + ')');
+	return percent;
 }
 
 function _predictAtPoint(x, y) {
-    if (x !== undefined && y !== undefined) {
-        map[agentPos.x][agentPos.y] = 0;
-        agentPos.x = x;
-        agentPos.y = y;
-        map[agentPos.x][agentPos.y] = 0.5;
-        drawMap();
-    }
-    let _input = _mapToNNInput(map);
-    let predRes = Array.from(model.predict(tf.tensor2d([
-        _input.concat([1,1,1,  0,0,0,  0,0,0,  0,0,0]), // left
-        _input.concat([0,0,0,  1,1,1,  0,0,0,  0,0,0]), // down
-        _input.concat([0,0,0,  0,0,0,  1,1,1,  0,0,0]), // right
-        _input.concat([0,0,0,  0,0,0,  0,0,0,  1,1,1]) // up
-    ])).dataSync());
-    tf.nextFrame();
-    return predRes;
+	if (x !== undefined && y !== undefined) {
+		map[agentPos.x][agentPos.y] = 0;
+		agentPos.x = x;
+		agentPos.y = y;
+		map[agentPos.x][agentPos.y] = 0.5;
+		drawMap();
+	}
+	let _input = _mapToNNInput(map);
+	let predRes = Array.from(model.predict(tf.tensor2d([
+		_input.concat([1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]), // left
+		_input.concat([0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0]), // down
+		_input.concat([0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0]), // right
+		_input.concat([0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1]) // up
+	])).dataSync());
+	tf.nextFrame();
+	return predRes;
 }
 
 function saveModel(name) {
-    model.save('indexeddb://model__312_2');
-      console.log('saved !');
+	model.save('indexeddb://model__312_2');
+	console.log('saved !');
 }
 
 function loadModel() {
-    return tf.loadModel('indexeddb://model__312_2' /*'indexeddb://model_204_4tanh_1tanh'*/ ).then(m => {
-        model = m;
-        _compileModel(model);
-        let d = new Date();
-        console.log('loaded! >>>' + new Date().toLocaleString());
-    });
+	return tf.loadModel('indexeddb://model__312_2' /*'indexeddb://model_204_4tanh_1tanh'*/ ).then(m => {
+		model = m;
+		_compileModel(model);
+		let d = new Date();
+		console.log('loaded! >>>' + new Date().toLocaleString());
+	});
 }
 
 function loadModelFromFile() {
@@ -602,83 +610,91 @@ function loadModelFromFile() {
 	const weightsUpload = document.getElementById('weights-upload');
 
 	tf.loadModel(tf.io.browserFiles([
-    jsonUpload.files[0], 
-    weightsUpload.files[0]
-  ])).then(m => {
-    model = m;
-    _compileModel(model);
-    console.log('loaded!');
-  });
+		jsonUpload.files[0],
+		weightsUpload.files[0]
+	])).then(m => {
+		model = m;
+		_compileModel(model);
+		console.log('loaded!');
+	});
 }
 
 function saveToFile() {
 	model.save('downloads://model__312_' + Date.now());
-  console.log('saved !');
+	console.log('saved !');
 }
 
 function shuffle(a) {
-    for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
+	for (let i = a.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[a[i], a[j]] = [a[j], a[i]];
+	}
+	return a;
 }
 
 function _normalizeReward(r) { // not in use for new
-    return -(1 / (3 * Math.max(r, 0) + 1)) + 1;
+	return -(1 / (3 * Math.max(r, 0) + 1)) + 1;
 }
 
 function _mapToNNInput(map) {
-    const stepsHistoryInput = [];
-    map.forEach(mapCol => {
-        mapCol.forEach(e => {
-            // stepsHistoryInput.push(e);
-            switch (e) {
-                case 0: stepsHistoryInput.push(0, 0, 0); break;
-                case 1: stepsHistoryInput.push(1, 0, 0); break;
-                case -1: stepsHistoryInput.push(0, 0, 1); break;
-                case 0.5: stepsHistoryInput.push(0, 1, 0); break;
-            }
-        });
-    });
-    return stepsHistoryInput;
+	const stepsHistoryInput = [];
+	map.forEach(mapCol => {
+		mapCol.forEach(e => {
+			// stepsHistoryInput.push(e);
+			switch (e) {
+				case 0:
+					stepsHistoryInput.push(0, 0, 0);
+					break;
+				case 1:
+					stepsHistoryInput.push(1, 0, 0);
+					break;
+				case -1:
+					stepsHistoryInput.push(0, 0, 1);
+					break;
+				case 0.5:
+					stepsHistoryInput.push(0, 1, 0);
+					break;
+			}
+		});
+	});
+	return stepsHistoryInput;
 }
 
 function enableCellsMarking() {
-    document.querySelectorAll('td').forEach(td => {
-        td.addEventListener('click', e => {
-            e.target.style.backgroundColor = '#050';
-        });
+	document.querySelectorAll('td').forEach(td => {
+		td.addEventListener('click', e => {
+			e.target.style.backgroundColor = '#050';
+		});
 		td.addEventListener('contextmenu', e => {
 			e.preventDefault();
-            e.target.style.backgroundColor = '#800';
+			e.target.style.backgroundColor = '#800';
 			return false;
-        }, false);
-    });
+		}, false);
+	});
 }
 
 function _debugHistoryMap(index) {
-  var m='';
-  var ar = stepsHistory[index][0];
-  var r = stepsHistory[index][1];
-  for (let i=0; i<10; i++) {
+	var m = '';
+	var ar = stepsHistory[index][0];
+	var r = stepsHistory[index][1];
+	for (let i = 0; i < 10; i++) {
 
-    for (let j=0; j<30; j=j+3) {
-      if(ar[i*30+j]==1 && ar[i*30+j+1]==0 && ar[i*30+j+2]==0) {
-        m += '@';
-      }
-      if(ar[i*30+j]==0 && ar[i*30+j+1]==1 && ar[i*30+j+2]==0) {
-        m += ')';
-      }
-      if(ar[i*30+j]==0 && ar[i*30+j+1]==0 && ar[i*30+j+2]==1) {
-        m += 'x';
-      }
-      if(ar[i*30+j]==0 && ar[i*30+j+1]==0 && ar[i*30+j+2]==0) {
-        m += '.';
-      }
-    }
-    m += '\n';
-  }
-  console.log(m);
+		for (let j = 0; j < 30; j = j + 3) {
+			if (ar[i * 30 + j] == 1 && ar[i * 30 + j + 1] == 0 && ar[i * 30 + j + 2] == 0) {
+				m += '@';
+			}
+			if (ar[i * 30 + j] == 0 && ar[i * 30 + j + 1] == 1 && ar[i * 30 + j + 2] == 0) {
+				m += ')';
+			}
+			if (ar[i * 30 + j] == 0 && ar[i * 30 + j + 1] == 0 && ar[i * 30 + j + 2] == 1) {
+				m += 'x';
+			}
+			if (ar[i * 30 + j] == 0 && ar[i * 30 + j + 1] == 0 && ar[i * 30 + j + 2] == 0) {
+				m += '.';
+			}
+		}
+		m += '\n';
+	}
+	console.log(m);
 }
 </script>
