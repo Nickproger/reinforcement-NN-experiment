@@ -73,9 +73,9 @@ let
 		// Config
 		lambda = 0.63, // 0.68
     maxMinutesForTrain = 20,
-    ownStepProbability = 0.5,
-    stepsForTrainSet = 3000,
-    optimizerAccuracy = 0.03,//0.01,// 0.001,
+    ownStepProbability = 1,
+    stepsForTrainSet = 10000,
+    optimizerAccuracy = 0.1,//0.01,// 0.001,
     epochs = 1,
 		batchSize = 256,
     waitTimePerStep = 0,
@@ -146,7 +146,7 @@ function doWorldCycle() {
       ownStepProbability = stepRes.reward === 1
         ? 1
         : Math.max(0, +(ownStepProbability - 0.2).toFixed(1));
-      console.log('ownStepProbability >> ', ownStepProbability);
+      // console.log('ownStepProbability >> ', ownStepProbability);
     }
     
 
@@ -177,7 +177,7 @@ function doWorldCycle() {
 
 
 
-//   drawMap();
+   // drawMap();
 
 
     //let hLen = stepsHistory.length;
@@ -258,20 +258,24 @@ function defineNN() {
 		const inputMap = tf.input({shape: [10, 10, 3]});
 		const inputAct = tf.input({shape: [4]});
 
-		var mapLayer = tf.layers.conv2d({inputShape: [10, 10, 3], kernelSize:3,filters: 8, strides: 1,activation: 'relu', kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(inputMap);
-		mapLayer = tf.layers.conv2d({kernelSize: 5,filters: 8,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
+		var mapLayer = tf.layers.conv2d({inputShape: [10, 10, 3], kernelSize:3,filters: 16, strides: 1,activation: 'relu', kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(inputMap);
+//		mapLayer = tf.layers.conv2d({kernelSize:3,filters:8,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
+//		mapLayer = tf.layers.conv2d({kernelSize:3,filters:8,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
+		mapLayer = tf.layers.maxPooling2d({poolSize: [2, 2],strides: [2, 2]}).apply(mapLayer);
+
+
 		mapLayer = tf.layers.flatten().apply(mapLayer);
 		mapLayer = tf.layers.dropout({rate: 0.4}).apply(mapLayer);
-		mapLayer = tf.layers.dense({units: 96, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(mapLayer);
+		mapLayer = tf.layers.dense({units: 128, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(mapLayer);
 
 //		mapLayer = tf.layers.dense({units: 16, activation: 'relu',kernelInitializer: 'VarianceScaling'}).apply(mapLayer);
 		// debugger;
 
-		var actLayer = tf.layers.dense({units: 32, activation: 'relu',kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(inputAct);
+		var actLayer = tf.layers.dense({units: 64, activation: 'relu',kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(inputAct);
 
 		var layer = tf.layers.concatenate().apply([mapLayer, actLayer]);
 		layer = tf.layers.dropout({rate: 0.4}).apply(layer);
-		layer = tf.layers.dense({units: 128, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(layer);
+		layer = tf.layers.dense({units: 192, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(layer);
 		layer = tf.layers.dropout({rate: 0.4}).apply(layer);
 //		layer = tf.layers.dense({units: 804, activation: 'elu', kernelInitializer: 'VarianceScaling'}).apply(layer);
 //		layer = tf.layers.dense({units: 404, activation: 'relu',kernelInitializer: 'VarianceScaling'}).apply(layer);
@@ -314,8 +318,8 @@ function runTrain(_innerRun) {
         if (!_innerRun) {
             //stepsHistory = stepsHistory.filter(e => !isNaN(e[2][0]));
             stepsHistory = _getUniqueHistory(stepsHistory);
-            //stepsHistory = shuffle(stepsHistory);  
-            //stepsHistory = stepsHistory.filter((e,i) => !isNaN(e[2][0]) && (i<1000 || _isAgentNearTarget(e)));  
+            stepsHistory = shuffle(stepsHistory);  
+            stepsHistory = stepsHistory.filter((e,i) => !isNaN(e[2][0]) && (i<3000 || _isAgentNearTarget(e)));  
             //let i = 0;
             //stepsHistory = stepsHistory.filter(e => e[2][0]>=0.5 || e[2][0]<=-0.5 || e[2][0]>-0.5 && e[2][0]<0.5 && i<1000 && ++i );
 
