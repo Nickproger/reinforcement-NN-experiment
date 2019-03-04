@@ -71,10 +71,10 @@ let
 		modelFileName = 'model__10x10_4',
 
 		// Config
-		lambda = 0.63, // 0.68
+		lambda = 0.7, // 0.68
     maxMinutesForTrain = 20,
     ownStepProbability = 1,
-    stepsForTrainSet = 10000,
+    stepsForTrainSet = 15000,
     optimizerAccuracy = 0.1,//0.01,// 0.001,
     epochs = 1,
 		batchSize = 256,
@@ -259,23 +259,22 @@ function defineNN() {
 		const inputAct = tf.input({shape: [4]});
 
 		var mapLayer = tf.layers.conv2d({inputShape: [10, 10, 3], kernelSize:3,filters: 16, strides: 1,activation: 'relu', kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(inputMap);
-//		mapLayer = tf.layers.conv2d({kernelSize:3,filters:8,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
-//		mapLayer = tf.layers.conv2d({kernelSize:3,filters:8,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
 		mapLayer = tf.layers.maxPooling2d({poolSize: [2, 2],strides: [2, 2]}).apply(mapLayer);
+		mapLayer = tf.layers.conv2d({kernelSize:3,filters:32,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
 
 
 		mapLayer = tf.layers.flatten().apply(mapLayer);
 		mapLayer = tf.layers.dropout({rate: 0.4}).apply(mapLayer);
-		mapLayer = tf.layers.dense({units: 128, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(mapLayer);
+		mapLayer = tf.layers.dense({units: 256, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(mapLayer);
 
 //		mapLayer = tf.layers.dense({units: 16, activation: 'relu',kernelInitializer: 'VarianceScaling'}).apply(mapLayer);
 		// debugger;
 
-		var actLayer = tf.layers.dense({units: 64, activation: 'relu',kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(inputAct);
+		var actLayer = tf.layers.dense({units: 128, activation: 'relu',kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(inputAct);
 
 		var layer = tf.layers.concatenate().apply([mapLayer, actLayer]);
 		layer = tf.layers.dropout({rate: 0.4}).apply(layer);
-		layer = tf.layers.dense({units: 192, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(layer);
+		layer = tf.layers.dense({units: 384, activation: 'relu', kernelInitializer: 'glorotNormal', biasInitializer:'glorotNormal'}).apply(layer);
 		layer = tf.layers.dropout({rate: 0.4}).apply(layer);
 //		layer = tf.layers.dense({units: 804, activation: 'elu', kernelInitializer: 'VarianceScaling'}).apply(layer);
 //		layer = tf.layers.dense({units: 404, activation: 'relu',kernelInitializer: 'VarianceScaling'}).apply(layer);
@@ -739,4 +738,5 @@ function _debugHistoryMap(index) {
   }
   console.log(m);
 }
+
 </script>
