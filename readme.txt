@@ -12,3 +12,5 @@ http://jsfiddle.net/7fzwdcy5/737/ - good results
 http://jsfiddle.net/7fzwdcy5/888/ - strategy auto-adjusting
 
 https://jsfiddle.net/nickproger/dpcxhys0/266/ - Conv2d Layer + Dense Layer
+
+https://jsfiddle.net/nickproger/dpcxhys0/324/
