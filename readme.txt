@@ -16,3 +16,5 @@ https://jsfiddle.net/nickproger/dpcxhys0/266/ - Conv2d Layer + Dense Layer
 https://jsfiddle.net/nickproger/dpcxhys0/324/
 
 https://jsfiddle.net/nickproger/dpcxhys0/328/
+
+https://jsfiddle.net/nickproger/dpcxhys0/342/ - with `maxPooling2d` layers, works good!
