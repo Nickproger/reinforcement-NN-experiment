@@ -261,6 +261,11 @@ function defineNN() {
 		var mapLayer = tf.layers.conv2d({inputShape: [10, 10, 3], kernelSize:3,filters: 16, strides: 1,activation: 'relu', kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(inputMap);
 		mapLayer = tf.layers.maxPooling2d({poolSize: [2, 2],strides: [2, 2]}).apply(mapLayer);
 		mapLayer = tf.layers.conv2d({kernelSize:3,filters:32,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
+		mapLayer = tf.layers.maxPooling2d({poolSize: [2, 2],strides: [2, 2]}).apply(mapLayer);
+		mapLayer = tf.layers.conv2d({kernelSize:3,filters:64,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
+
+
+		mapLayer = tf.layers.conv2d({kernelSize:5,filters:32,strides: 1, activation: 'relu',kernelInitializer: 'VarianceScaling',padding: 'same'}).apply(mapLayer);
 
 
 		mapLayer = tf.layers.flatten().apply(mapLayer);
@@ -283,7 +288,8 @@ function defineNN() {
 
 		const model = tf.model({inputs: [inputMap, inputAct], outputs: layer});
 		_compileModel(model);
-    return model;
+		return model;
+
 
 
 }
