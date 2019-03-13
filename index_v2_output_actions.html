@@ -1,0 +1,538 @@
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.0.0">
+
+</script>
+<table id="map"></table>
+<div id="result"></div>
+
+<button onclick="runWorld()">Run world</button>
+<button onclick="pauseWorld(true)">Pause world</button>
+<br /><br />
+<button onclick="runTrain()">Run train</button>
+<button onclick="pauseTrain()">Pause train</button>
+<br /><br />
+<button onclick="drawMap(true)">Phediction MAP</button><br />
+<br /><br />
+<button onclick="saveModel()">Save model</button><br />
+<button onclick="loadModel()">Load model</button><br />
+<button onclick="removeModel()">Remove model</button><br />
+<br />
+<input id="json-upload" type="file" />
+<br />
+<input id="weights-upload" type="file" />
+<br />
+<button onclick="loadModelFromFile()">Load model from file</button>
+<br /><br />
+<button onclick="saveToFile()">Save to file</button>
+<br><br>
+<button onclick="_saveAndReset()">save and reset!</button>
+<br><br>
+<button onclick="stopReloads()">stop Reloads!</button>
+
+
+
+
+
+
+<style>
+body {
+  background: black;
+  color: grey;
+}
+
+table {
+  border: 1px solid grey;
+}
+
+td {
+  width: 20px;
+  height: 20px;
+  background: #000;
+  text-align: center;
+  border: 1px solid #222;
+  font-weight: bold;
+}
+
+button {
+  min-width: 120px;
+}
+</style>
+
+
+
+
+
+
+<script>
+let 
+
+    modelFileName = 'model__10x10_2d-2p-2d-2p-2d_v2',
+
+		// Config
+    lambda = 0.75, // 0.68
+    maxMinutesForTrain = 7,
+    stepsForTrainSet = 5000,
+    optimizerAccuracy = 0.1,//0.01,// 0.001,
+    epochs = 2,
+		batchSize = 128,
+    waitTimePerStep = 0,
+    usePredictedActions = true,
+
+
+    ownStepProbability = 1,
+    map = [],
+    stepsHistory = [/* Map arr, Action arr, Res, _UniqueHistoryKey */],
+    agentPos, result = 0,
+    model = defineNN(),
+    d,a, stepRes, countedReward, _lastTrainRes = {};
+    
+    
+    // tf.memory().numTensors;
+    
+    
+var _trainingInProgress, _worldCycleInterval, _autoReloader, _stepsFromLastPositiveResult = 0;
+
+init();
+
+
+function init() {
+    let newPos;
+    console.clear();
+    for (let x = 0; x < 10; x++) {
+        map[x] = [];
+        for (let y = 0; y < 10; y++) {
+            map[x][y] = 0;
+        }
+    }
+    for (let i=0; i<5; i++) {
+	    newPos = _findEmptyPos(); map[newPos.x][newPos.y] = -1;
+    	newPos = _findEmptyPos(); map[newPos.x][newPos.y] = 1;
+    }
+    agentPos = _findEmptyPos(); map[agentPos.x][agentPos.y] = 0.5;
+    drawMap();
+
+		_autoReloader = setTimeout(_saveAndReset, maxMinutesForTrain*60*1000);
+
+    loadModel().then(runWorld);
+}
+
+function doWorldCycle() {
+
+    stepsHistory.push([_mapToNNInput(map), _predictAtPoint()]);
+    stepRes = doStep();
+    a = stepRes.action;
+    //stepsHistory[stepsHistory.length-1].push([+(a==0),+(a==1),+(a==2),+(a==3)]);
+    
+    // if agent take the reward ("green apple")
+    if (stepRes.reward === -1 || stepRes.reward === 1) {
+				let pos = _findEmptyPos();
+        map[pos.x][pos.y] = stepRes.reward;
+        result = result + stepRes.reward;
+				if (waitTimePerStep === 0) {
+					drawMap();
+				}
+        
+    }
+
+    if (usePredictedActions) {
+			_stepsFromLastPositiveResult++;
+    	if (stepRes.reward === 1 || _stepsFromLastPositiveResult === 15) {
+	    	_stepsFromLastPositiveResult = 0;
+      	ownStepProbability = stepRes.reward === 1
+        	? 1
+        	: Math.max(0, +(ownStepProbability - 0.2).toFixed(1));
+	      console.log('ownStepProbability >> ', ownStepProbability);
+      }
+    }
+   
+
+		countedReward = stepRes.reward + lambda * Math.max.apply(null, _predictAtPoint());
+  	stepsHistory[stepsHistory.length-1].push([countedReward]);
+    stepsHistory[stepsHistory.length-1][1][a] = countedReward;
+		
+		if (waitTimePerStep ){ // waitTimePerStep > 0
+  		 drawMap();
+		}
+
+    if (stepsHistory.length >= stepsForTrainSet) {
+        pauseWorld();
+        drawMap(true);
+        setTimeout(runTrain, 1000);
+    }
+}
+
+function runWorld() {
+    if (!_worldCycleInterval) {
+        _worldCycleInterval = setInterval(doWorldCycle, waitTimePerStep);
+    }
+}
+
+function pauseWorld(isManual) {
+    clearInterval(_worldCycleInterval);
+    _worldCycleInterval = undefined;
+}
+
+function stopReloads() {
+    clearTimeout(_autoReloader);
+}
+
+
+function defineNN() {
+		let input = tf.input({shape: [10, 10, 3]});
+		let layer = tf.layers.conv2d({inputShape:[10,10,3], kernelSize:2,filters:256,strides:1,activation:'relu',kernelInitializer:'VarianceScaling', padding:'same'}).apply(input);
+		layer = tf.layers.maxPooling2d({poolSize: [2, 2],strides: [2, 2]}).apply(layer);
+		layer = tf.layers.conv2d({kernelSize:2,filters:512,strides:1,activation:'relu',kernelInitializer:'VarianceScaling'}).apply(layer);
+		layer = tf.layers.maxPooling2d({poolSize: [2, 2],strides: [2, 2]}).apply(layer);
+		layer = tf.layers.conv2d({kernelSize:2,filters:1024,strides:1,activation:'relu',kernelInitializer:'VarianceScaling'}).apply(layer);
+		layer = tf.layers.flatten().apply(layer);
+		layer = tf.layers.dropout({rate:0.4}).apply(layer);
+		layer = tf.layers.dense({units: 1024, activation: 'relu',kernelInitializer:'heNormal'}).apply(layer);
+		layer = tf.layers.dropout({rate:0.4}).apply(layer);
+		layer = tf.layers.dense({units: 4, activation: 'linear',kernelInitializer:'glorotUniform'}).apply(layer);
+		const model = tf.model({inputs: input, outputs: layer});
+		_compileModel(model);
+		return model;
+}
+
+
+function _compileModel(model) {
+    model.compile({
+        optimizer: tf.train.sgd(optimizerAccuracy),
+        loss: 'meanSquaredError',
+				metrics: ['accuracy'],
+   });
+}
+
+function train(stepsHistory) {
+		let mapInput = tf.tensor4d(stepsHistory.map(el => el[0]));
+    let actionOutput = tf.tensor2d(stepsHistory.map(el => el[1]));
+    const opts = {
+      	epochs: epochs,
+      	shuffle: true,
+      	batch_size: batchSize,
+        validationSplit: 0.2
+  	};
+    const res = model.fit(mapInput, actionOutput, opts).then((res) => {
+      const h = res.history;
+      const l = h.loss.length - 1;
+      const r = function(v) {return Math.round(v*1000)/1000; }
+      
+			console.log('Train: loss:', r(h.loss[l]), '\t', r(h.val_loss[l]),' acc:', r(h.acc[l]), '\t', r(h.val_acc[l]));
+      _lastTrainRes = {acc:r(h.acc[l]), loss:r(h.loss[l]), val_acc:r(h.val_acc[l]), val_loss:r(h.val_loss[l]) };
+      return _lastTrainRes;
+		});
+    mapInput.dispose();
+    mapInput = undefined;
+    actionOutput.dispose();
+    actionOutput = undefined;
+		return res;
+}
+
+function runTrain(_innerRun) {
+    if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
+        if (!_innerRun) {
+            //stepsHistory = stepsHistory.filter(e => !isNaN(e[2][0]));
+            // doesnt work!!! stepsHistory = _getUniqueHistory(stepsHistory);
+            stepsHistory = shuffle(stepsHistory);  
+            //stepsHistory = stepsHistory.filter((e,i) => !isNaN(e[2][0]) && (i<1000 || _isAgentNearTarget(e)));  
+            //let i = 0;
+            //stepsHistory = stepsHistory.filter(e => e[2][0]>=0.5 || e[2][0]<=-0.5 || e[2][0]>-0.5 && e[2][0]<0.5 && i<1000 && ++i );
+
+						//stepsHistory = stepsHistory.slice(0, stepsHistory.length - stepsHistory.length % 1000);
+
+						d = new Date();
+            console.log(
+              '[' + d.getHours() + ':' + d.getMinutes() + ':' + d.getSeconds() + '] ' +
+             'items:', stepsHistory.length + ' train...'
+            );
+        }
+
+        train(stepsHistory).then((acc) => {
+								drawMap(true);
+        				if (acc > 0.9) {
+                	_saveAndReset();
+                }
+            		if (!_trainingInProgress && !_innerRun || _trainingInProgress && _innerRun) {
+                	_trainingInProgress = setTimeout(() => runTrain('_innerRun'), 100);
+                }							
+				});
+    }
+}
+
+
+function _isAgentNearTarget(_e) {
+			var i, j, found, e = _e[0];
+			for (i=0; i<10; i++) {
+				for (j=0; j<10; j++) {
+					if (e[i][j][1] === 1) {
+					    found = true;
+							break;
+					}
+				}
+				if (found) {
+					break;
+				}
+			}
+			return (j>0 && (e[i][j-1][0] || e[i][j-1][2]))
+					|| (j<9 && (e[i][j+1][0] || e[i][j+1][2]))
+					|| (i>0 && (e[i-1][j][0] || e[i-1][j][2]))
+					|| (i<9 && (e[i+1][j][0] || e[i+1][j][2]));
+	}
+
+function pauseTrain(isManual) {
+    console.log('pause training ...');
+    clearTimeout(_trainingInProgress);
+    _trainingInProgress = undefined;
+}
+
+
+function _saveAndReset() {
+    pauseTrain();
+    saveModel();
+    
+    localStorage.setItem('trainLOG', '' + 
+        new Date().getDate() + ' ' +
+				new Date().toTimeString().substr(0, 8) + ' ' +
+        result + '/' + stepsHistory.length + ' \t' +
+        'loss:'+_lastTrainRes.loss.toFixed(3) + '\t' +
+        'vLoss:'+_lastTrainRes.val_loss.toFixed(3) + ' \t' +
+        'acc:'+_lastTrainRes.acc.toFixed(3) + '\t' +
+        'vAcc:'+_lastTrainRes.val_acc.toFixed(3) + '\n' +
+        (localStorage.getItem('trainLOG') || '')
+    );
+
+
+    setTimeout(function(){location.reload();}, 3000);
+}
+
+
+function doStep() {
+    let action = getAction();
+    let reward = 0;
+    let prevAgentPos = {
+        x: agentPos.x,
+        y: agentPos.y
+    };
+    //console.log(action);
+    switch (action) {
+        case 0: // left 
+            if (agentPos.y > 0) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.y = agentPos.y - 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(1111, reward,agentPos);
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+        case 1: // down
+            if (agentPos.x < 9) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.x = agentPos.x + 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(22222, reward, agentPos);
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+        case 2: // right
+            if (agentPos.y < 9) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.y = agentPos.y + 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(3333, reward,agentPos);
+
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+        case 3: // up
+            if (agentPos.x > 0) {
+                map[agentPos.x][agentPos.y] = 0;
+                agentPos.x = agentPos.x - 1;
+                reward = map[agentPos.x][agentPos.y];
+                //console.log(44444, reward,agentPos);
+                map[agentPos.x][agentPos.y] = 0.5;
+            }
+            break;
+    }
+    
+
+    return {
+        action,
+        reward,
+        agentPos: prevAgentPos     
+    };
+
+}
+
+function getAction() {
+    let _usePredictedActionNow, predAction, max;
+    if (usePredictedActions && Math.random() < ownStepProbability) {
+        const pred = _predictAtPoint();
+        max = Math.max.apply(null, pred);
+        predAction = pred.indexOf(max);
+        _usePredictedActionNow = true;//Math.abs(max > 0.5);
+    } else {
+        _usePredictedActionNow = false;
+    }
+    return _usePredictedActionNow ? predAction : Math.floor(Math.random() * 4);
+}
+
+function drawMap(showBg, brightness) {
+    var html = '',
+        bgCss, pred, max, actMarker, hint;
+    for (let x = 0; x < 10; x++) {
+        html += '<tr>';
+        for (let y = 0; y < 10; y++) {
+            if (showBg && map[x][y] === 0) {
+                pred = _predictAtPoint(x, y);
+                max = Math.max.apply(null, pred);
+                actMarker = ['<', 'v', '>', '^', ' '][pred.indexOf(max)];
+                bgCss = ' style="color:rgba(' +
+                		(max>=0?'255':'0')+',200,'+(max<0?'255':'0')+',' + 
+                  	(0.9*Math.abs(max) / (brightness || 1) + 0.1) + 
+                  ');" ';
+                let t = pred.map(e=>e.toFixed(3));
+                hint = ' title="<'+t[0]+"\rv"+t[1]+"\r>"+t[2]+"\r^"+t[3]+ '" ';
+            } else {
+                bgCss = '';
+                hint = '';
+            }
+
+            switch (map[x][y]) {
+                case 0: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ' ') + '</td>'; break;
+                case -1: html += '<td style="color:#F00;">X</td>'; break;
+                case 1: html += '<td style="color:#0C0;">@</td>'; break;
+                case 0.5: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ':)') + '</td>'; break;
+            }
+
+        }
+        html += '</tr>\n';
+    }
+    //console.log(html);
+    document.getElementById('map').innerHTML = html;
+    document.getElementById('result').innerHTML = result + ' / ' + stepsHistory.length;
+
+		if (showBg) {
+	    enableCellsMarking();
+    }
+
+}
+
+function _findEmptyPos() {
+    let x, y;
+    do {
+        x = Math.floor(Math.random() * 10);
+        y = Math.floor(Math.random() * 10);
+    } while (map[x][y] !== 0);
+    return {x, y};
+}
+
+function _getUniqueHistory(stepsHistory) {
+    stepsHistory = _addHistoryItemIDs(stepsHistory);
+    const fHistory = [];
+    for (let i = stepsHistory.length - 1; i >= 0; i--) {
+        if (!fHistory.some(el => el[3] === stepsHistory[i][3])) {
+            fHistory.push(stepsHistory[i]);
+        }
+    }
+    return fHistory;
+}
+
+function _addHistoryItemIDs(stepsHistory) {
+    stepsHistory.forEach(el => {
+        if (!el[3]) {
+            el[3] = el[0].join(',');
+        }
+    });
+    return stepsHistory;
+}
+
+
+function _predictAtPoint(x, y) {
+    if (x !== undefined && y !== undefined) {
+        map[agentPos.x][agentPos.y] = 0;
+        agentPos.x = x;
+        agentPos.y = y;
+        map[agentPos.x][agentPos.y] = 0.5;
+        drawMap();
+    }
+    let _input = _mapToNNInput(map);
+		let predRes = tf.tidy(() => model.predict(tf.tensor4d([_input]))).dataSync();
+		tf.nextFrame();
+    return predRes;
+}
+
+function saveModel(name) {
+    model.save('indexeddb://'+modelFileName);
+      console.log('saved !');
+}
+
+function loadModel() {
+    return tf.loadLayersModel('indexeddb://'+modelFileName /*'indexeddb://model_204_4tanh_1tanh'*/ ).then(m => {
+        model = m;
+        _compileModel(model);
+        let d = new Date();
+        console.log('loaded! >>>' + new Date().toLocaleString());
+    });
+}
+
+function removeModel() {
+	return tf.io.removeModel('indexeddb://'+modelFileName);
+}
+
+function loadModelFromFile() {
+	const jsonUpload = document.getElementById('json-upload');
+	const weightsUpload = document.getElementById('weights-upload');
+
+	tf.loadLayersModel(tf.io.browserFiles([
+    jsonUpload.files[0], 
+    weightsUpload.files[0]
+  ])).then(m => {
+    model = m;
+    _compileModel(model);
+    console.log('loaded!');
+  });
+}
+
+function saveToFile() {
+	model.save('downloads://' + modelFileName + '_' + Date.now());
+  console.log('saved !');
+}
+
+function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+function _mapToNNInput(map) {
+    const stepsHistoryInput = [];
+		let arr;
+    map.forEach(mapCol => {
+		    arr = [];
+				stepsHistoryInput.push(arr);
+        mapCol.forEach(e => {
+            switch (e) {
+                case 0: arr.push([0, 0, 0]); break;
+                case 1: arr.push([1, 0, 0]); break;
+                case -1: arr.push([0, 0, 1]); break;
+                case 0.5: arr.push([0, 1, 0]); break;
+            }
+        });
+    });
+    return stepsHistoryInput;
+}
+
+function enableCellsMarking() {
+    document.querySelectorAll('td').forEach(td => {
+        td.addEventListener('click', e => {
+            e.target.style.backgroundColor = '#050';
+        });
+		td.addEventListener('contextmenu', e => {
+			e.preventDefault();
+            e.target.style.backgroundColor = '#800';
+			return false;
+        }, false);
+    });
+}
+</script>
