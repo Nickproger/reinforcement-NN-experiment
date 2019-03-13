@@ -18,3 +18,6 @@ https://jsfiddle.net/nickproger/dpcxhys0/324/
 https://jsfiddle.net/nickproger/dpcxhys0/328/
 
 https://jsfiddle.net/nickproger/dpcxhys0/342/ - with `maxPooling2d` layers, works good!
+
+https://jsfiddle.net/9qdjse5u/42/ - with model output as Actions (not Q-value). Works good!
+
