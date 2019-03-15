@@ -6,11 +6,13 @@
 
 <button onclick="runWorld()">Run world</button>
 <button onclick="pauseWorld(true)">Pause world</button>
-<br /><br />
+<br />
 <button onclick="runTrain()">Run train</button>
 <button onclick="pauseTrain()">Pause train</button>
 <br /><br />
-<button onclick="drawMap(true)">Phediction MAP</button><br />
+<button onclick="drawMap(true, undefined, true)">Phediction MAP @</button><br />
+<button onclick="drawMap(true, undefined, false)">Phediction MAP X</button><br />
+<button onclick="showTrainLog()">show Train Log</button><br />
 <br /><br />
 <button onclick="saveModel()">Save model</button><br />
 <button onclick="loadModel()">Load model</button><br />
@@ -65,15 +67,14 @@ button {
 <script>
 let 
 
+    // Config
     modelFileName = 'model__10x10_2d-2p-2d-2p-2d_v2',
-
-		// Config
     lambda = 0.75, // 0.68
-    maxMinutesForTrain = 7,
+    maxMinutesForTrain = 5,
     stepsForTrainSet = 5000,
     optimizerAccuracy = 0.1,//0.01,// 0.001,
-    epochs = 2,
-		batchSize = 128,
+    epochs = 4,
+    batchSize = 128,
     waitTimePerStep = 0,
     usePredictedActions = true,
 
@@ -185,8 +186,6 @@ function defineNN() {
 		layer = tf.layers.conv2d({kernelSize:2,filters:1024,strides:1,activation:'relu',kernelInitializer:'VarianceScaling'}).apply(layer);
 		layer = tf.layers.flatten().apply(layer);
 		layer = tf.layers.dropout({rate:0.4}).apply(layer);
-		layer = tf.layers.dense({units: 1024, activation: 'relu',kernelInitializer:'heNormal'}).apply(layer);
-		layer = tf.layers.dropout({rate:0.4}).apply(layer);
 		layer = tf.layers.dense({units: 4, activation: 'linear',kernelInitializer:'glorotUniform'}).apply(layer);
 		const model = tf.model({inputs: input, outputs: layer});
 		_compileModel(model);
@@ -233,7 +232,7 @@ function runTrain(_innerRun) {
             //stepsHistory = stepsHistory.filter(e => !isNaN(e[2][0]));
             // doesnt work!!! stepsHistory = _getUniqueHistory(stepsHistory);
             stepsHistory = shuffle(stepsHistory);  
-            //stepsHistory = stepsHistory.filter((e,i) => !isNaN(e[2][0]) && (i<1000 || _isAgentNearTarget(e)));  
+            //stepsHistory = stepsHistory.filter((e,i) => !isNaN(e[2][0]) && (i<2000 || _isAgentNearTarget(e)));  
             //let i = 0;
             //stepsHistory = stepsHistory.filter(e => e[2][0]>=0.5 || e[2][0]<=-0.5 || e[2][0]>-0.5 && e[2][0]<0.5 && i<1000 && ++i );
 
@@ -304,6 +303,9 @@ function _saveAndReset() {
     setTimeout(function(){location.reload();}, 3000);
 }
 
+function showTrainLog() {
+	console.log(localStorage.getItem('trainLOG'));
+}
 
 function doStep() {
     let action = getAction();
@@ -375,19 +377,20 @@ function getAction() {
     return _usePredictedActionNow ? predAction : Math.floor(Math.random() * 4);
 }
 
-function drawMap(showBg, brightness) {
+function drawMap(showBg, brightness, showPositive) {
     var html = '',
-        bgCss, pred, max, actMarker, hint;
-    for (let x = 0; x < 10; x++) {
+        bgCss, pred, extr, actMarker, hint;
+		showPositive = showPositive || showPositive === undefined;
+		for (let x = 0; x < 10; x++) {
         html += '<tr>';
         for (let y = 0; y < 10; y++) {
             if (showBg && map[x][y] === 0) {
                 pred = _predictAtPoint(x, y);
-                max = Math.max.apply(null, pred);
-                actMarker = ['<', 'v', '>', '^', ' '][pred.indexOf(max)];
+                extr = Math[showPositive ? 'max' : 'min'].apply(null, pred);
+                actMarker = ['<', 'v', '>', '^', ' '][pred.indexOf(extr)];
                 bgCss = ' style="color:rgba(' +
-                		(max>=0?'255':'0')+',200,'+(max<0?'255':'0')+',' + 
-                  	(0.9*Math.abs(max) / (brightness || 1) + 0.1) + 
+                		(extr>=0?'255':'0')+',200,'+(extr<0?'255':'0')+',' + 
+                  	(0.9*Math.abs(extr) / (brightness || 1) + 0.1) + 
                   ');" ';
                 let t = pred.map(e=>e.toFixed(3));
                 hint = ' title="<'+t[0]+"\rv"+t[1]+"\r>"+t[2]+"\r^"+t[3]+ '" ';
@@ -395,25 +398,21 @@ function drawMap(showBg, brightness) {
                 bgCss = '';
                 hint = '';
             }
-
             switch (map[x][y]) {
                 case 0: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ' ') + '</td>'; break;
                 case -1: html += '<td style="color:#F00;">X</td>'; break;
                 case 1: html += '<td style="color:#0C0;">@</td>'; break;
                 case 0.5: html += '<td ' + bgCss + hint + '>' + (showBg ? actMarker : ':)') + '</td>'; break;
             }
-
         }
         html += '</tr>\n';
     }
     //console.log(html);
     document.getElementById('map').innerHTML = html;
     document.getElementById('result').innerHTML = result + ' / ' + stepsHistory.length;
-
 		if (showBg) {
 	    enableCellsMarking();
     }
-
 }
 
 function _findEmptyPos() {
@@ -535,4 +534,6 @@ function enableCellsMarking() {
         }, false);
     });
 }
+
+
 </script>
